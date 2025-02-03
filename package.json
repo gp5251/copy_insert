@@ -1,0 +1,102 @@
+{
+  "name": "copy_insert",
+  "version": "1.0.0",
+  "description": "一个用于快速复制和处理文件的桌面工具",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.electron.copyinsert",
+    "productName": "CopyInsert",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/sharp/**/*"
+    ],
+    "files": [
+      "**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,package-lock.json,pnpm-lock.yaml}"
+    ],
+    "extraFiles": [
+      {
+        "from": "preload.js",
+        "to": "preload.js"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "extendInfo": {
+        "NSServices": [
+          {
+            "NSMenuItem": {
+              "default": "CopyInsert - 复制并处理"
+            },
+            "NSMessage": "handleFiles",
+            "NSRequiredContext": {
+              "NSApplicationIdentifier": "com.electron.copyinsert"
+            },
+            "NSSendTypes": [
+              "public.file-url"
+            ]
+          }
+        ]
+      }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "fileAssociations": [
+        {
+          "ext": "*",
+          "name": "CopyInsert",
+          "description": "使用CopyInsert处理文件"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "CopyInsert",
+      "include": "installer.nsh"
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "clipboard-event": "^1.6.0",
+    "electron-store": "^10.0.1",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "electron": "^34.0.2",
+    "electron-builder": "^24.9.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "sharp"
+    ]
+  }
+}
