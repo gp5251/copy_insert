@@ -25,11 +25,19 @@ let mainWindow;
 const exec = promisify(execCallback);
 
 function createWindow() {
+  const config = store.get('config');
+  const isSimpleMode = config && config.simpleMode;
+
   mainWindow = new BrowserWindow({
-    width: 400,
-    height: 450,
+    width: isSimpleMode ? 380 : 380,
+    height: isSimpleMode ? 50 : 360,
     useContentSize: true,
-    resizable: false,
+    resizable: true,
+    minWidth: 380,
+    minHeight: 40,
+    frame: !isSimpleMode,
+    transparent: true,
+    titleBarStyle: isSimpleMode ? 'hidden' : 'default',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -37,15 +45,18 @@ function createWindow() {
     }
   });
 
-  // 从配置中读取置顶状态
-  const config = store.get('config');
+  // 监听窗口大小变化
+  mainWindow.on('resize', () => {
+    const [width, height] = mainWindow.getSize();
+    mainWindow.webContents.send('window-resized', { width, height });
+  });
+
+  // 设置置顶状态
   if (config && config.alwaysOnTop) {
     mainWindow.setAlwaysOnTop(true);
   }
 
   mainWindow.loadFile('index.html');
-  // 打开开发者工具
-  // mainWindow.webContents.openDevTools();
 }
 
 // 默认配置
@@ -55,7 +66,8 @@ const DEFAULT_CONFIG = {
   pathAliases: {
     '@': 'assets'
   },
-  alwaysOnTop: false
+  alwaysOnTop: false,
+  simpleMode: false
 };
 
 // 确保配置存在
@@ -416,6 +428,25 @@ ipcMain.handle('executeNow', async () => {
     // 确保错误信息被正确传递到渲染进程
     throw new Error(error.message || '执行失败');
   }
+});
+
+// 处理窗口大小调整和边框设置
+ipcMain.handle('setWindowSize', async (event, width, height, hasFrame) => {
+  if (mainWindow) {
+    const position = mainWindow.getPosition();
+    const isAlwaysOnTop = mainWindow.isAlwaysOnTop();
+    
+    // 更新当前窗口的设置
+    mainWindow.setSize(width, height);
+    mainWindow.setResizable(true);
+    if (process.platform === 'darwin') {
+      mainWindow.setWindowButtonVisibility(hasFrame);
+    }
+    mainWindow.setAlwaysOnTop(isAlwaysOnTop);
+    
+    return true;
+  }
+  return false;
 });
 
 app.on('window-all-closed', () => {

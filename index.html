@@ -5,19 +5,38 @@
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-            padding: 16px;
+            padding: 0;
             margin: 0;
-            background-color: #f5f5f5;
+            background-color: transparent;
             min-width: 360px;
+            -webkit-app-region: no-drag;
         }
         .container {
             background-color: white;
             padding: 16px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            -webkit-app-region: drag;
+            height: 100vh;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+        .container.simple-mode {
+            padding: 8px;
+            min-width: auto;
+            background-color: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            height: 100vh;
         }
         .form-group {
             margin-bottom: 15px;
+            -webkit-app-region: no-drag;
+            flex-shrink: 0;
+        }
+        .form-group.hidden {
+            display: none;
         }
         label {
             display: block;
@@ -38,6 +57,17 @@
             display: flex;
             gap: 10px;
             margin-top: 20px;
+            -webkit-app-region: no-drag;
+        }
+        .button-group.simple-mode {
+            margin-top: 0;
+            margin-bottom: 0;
+            gap: 0;
+        }
+        .button-group.simple-mode .execute {
+            border-radius: 4px;
+            padding: 6px 12px;
+            width: 100%;
         }
         button {
             padding: 8px 16px;
@@ -46,13 +76,14 @@
             background-color: #007aff;
             color: white;
             cursor: pointer;
-            transition: background-color 0.3s;
+            transition: all 0.3s ease;
         }
         button:hover {
             background-color: #0056b3;
         }
         button.execute {
             background-color: #34c759;
+            flex: 1;
         }
         button.execute:hover {
             background-color: #248a3d;
@@ -62,20 +93,26 @@
             bottom: -100px;
             left: 50%;
             transform: translateX(-50%);
-            padding: 12px 24px;
+            padding: 8px 16px;
             border-radius: 4px;
             color: white;
-            transition: bottom 0.3s;
+            transition: all 0.3s ease;
             z-index: 1000;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            background-color: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(4px);
         }
         .notification.show {
-            bottom: 20px;
+            bottom: 4px;
+            opacity: 1;
         }
         .notification.success {
-            background-color: #34c759;
+            border-left: 3px solid #34c759;
         }
         .notification.error {
-            background-color: #ff3b30;
+            border-left: 3px solid #ff3b30;
         }
         .checkbox-group {
             display: flex;
@@ -83,8 +120,25 @@
             gap: 8px;
             margin-bottom: 15px;
         }
+        .checkbox-group.hidden {
+            display: none;
+        }
         .checkbox-group label {
             margin: 0;
+        }
+        .mode-toggle {
+            position: fixed;
+            top: 8px;
+            right: 8px;
+            opacity: 0.5;
+            transition: opacity 0.3s;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            background-color: rgba(0,0,0,0.1);
+        }
+        .mode-toggle:hover {
+            opacity: 1;
         }
     </style>
 </head>
@@ -112,9 +166,53 @@
         </div>
     </div>
 
+    <div class="mode-toggle" onclick="toggleMode()" title="切换精简模式">⚙️</div>
     <div id="notification" class="notification"></div>
 
     <script>
+        let isSimpleMode = false;
+        let lastSize = { width: 380, height: 360 };
+
+        // 监听窗口大小变化
+        window.electronAPI.onWindowResize(({ width, height }) => {
+            if (!isSimpleMode) {
+                lastSize = { width, height };
+            }
+        });
+
+        // 切换模式
+        async function toggleMode() {
+            isSimpleMode = !isSimpleMode;
+            const container = document.querySelector('.container');
+            const buttonGroup = document.querySelector('.button-group');
+            const formGroups = document.querySelectorAll('.form-group');
+            const checkboxGroups = document.querySelectorAll('.checkbox-group');
+            const saveButton = document.querySelector('button:not(.execute)');
+            
+            if (isSimpleMode) {
+                container.classList.add('simple-mode');
+                buttonGroup.classList.add('simple-mode');
+                formGroups.forEach(group => group.classList.add('hidden'));
+                checkboxGroups.forEach(group => group.classList.add('hidden'));
+                saveButton.style.display = 'none';
+                document.body.style.backgroundColor = 'transparent';
+                await window.electronAPI.setWindowSize(380, 50, false);
+            } else {
+                container.classList.remove('simple-mode');
+                buttonGroup.classList.remove('simple-mode');
+                formGroups.forEach(group => group.classList.remove('hidden'));
+                checkboxGroups.forEach(group => group.classList.remove('hidden'));
+                saveButton.style.display = '';
+                document.body.style.backgroundColor = '#f5f5f5';
+                await window.electronAPI.setWindowSize(lastSize.width || 380, lastSize.height || 360, true);
+            }
+            
+            // 保存模式设置
+            const config = await window.electronAPI.getConfig();
+            config.simpleMode = isSimpleMode;
+            await window.electronAPI.updateConfig(config);
+        }
+
         // 添加置顶控制函数
         async function toggleAlwaysOnTop(checked) {
             await window.electronAPI.setAlwaysOnTop(checked);
@@ -133,6 +231,25 @@
             
             // 加载置顶状态
             document.getElementById('alwaysOnTop').checked = config.alwaysOnTop || false;
+
+            // 加载模式设置
+            if (config.simpleMode) {
+                isSimpleMode = true;
+                const container = document.querySelector('.container');
+                const buttonGroup = document.querySelector('.button-group');
+                const formGroups = document.querySelectorAll('.form-group');
+                const checkboxGroups = document.querySelectorAll('.checkbox-group');
+                const saveButton = document.querySelector('button:not(.execute)');
+                
+                container.classList.add('simple-mode');
+                buttonGroup.classList.add('simple-mode');
+                formGroups.forEach(group => group.classList.add('hidden'));
+                checkboxGroups.forEach(group => group.classList.add('hidden'));
+                saveButton.style.display = 'none';
+                document.body.style.backgroundColor = 'transparent';
+            } else {
+                document.body.style.backgroundColor = '#f5f5f5';
+            }
         }
 
         // 保存配置
@@ -165,13 +282,20 @@
             const notification = document.getElementById('notification');
             // 如果是Error对象，获取其message属性
             const displayMessage = message instanceof Error ? message.message : message;
+            
+            // 清除之前的定时器
+            if (notification.hideTimer) {
+                clearTimeout(notification.hideTimer);
+            }
+            
             notification.textContent = displayMessage;
             notification.className = `notification ${type}`;
             notification.classList.add('show');
             
-            setTimeout(() => {
+            // 保存定时器引用
+            notification.hideTimer = setTimeout(() => {
                 notification.classList.remove('show');
-            }, 3000);
+            }, 2000);
         }
 
         // 监听主进程的消息
