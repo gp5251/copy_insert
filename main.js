@@ -29,11 +29,11 @@ function createWindow() {
   const isSimpleMode = config && config.simpleMode;
 
   mainWindow = new BrowserWindow({
-    width: isSimpleMode ? 380 : 380,
+    width: isSimpleMode ? 190 : 380,
     height: isSimpleMode ? 50 : 360,
     useContentSize: true,
     resizable: true,
-    minWidth: 380,
+    minWidth: isSimpleMode ? 120 : 380,
     minHeight: 40,
     frame: !isSimpleMode,
     transparent: true,

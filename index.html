@@ -10,6 +10,8 @@
             background-color: transparent;
             min-width: 360px;
             -webkit-app-region: no-drag;
+            height: 100vh;
+            overflow: hidden;
         }
         .container {
             background-color: white;
@@ -18,17 +20,19 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             transition: all 0.3s ease;
             -webkit-app-region: drag;
-            height: 100vh;
+            height: 100%;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
+            overflow: auto;
         }
         .container.simple-mode {
             padding: 8px;
             min-width: auto;
             background-color: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
-            height: 100vh;
+            height: 100%;
+            overflow: hidden;
         }
         .form-group {
             margin-bottom: 15px;
@@ -60,14 +64,14 @@
             -webkit-app-region: no-drag;
         }
         .button-group.simple-mode {
-            margin-top: 0;
-            margin-bottom: 0;
+            margin: 0;
             gap: 0;
+            width: 135px;
         }
         .button-group.simple-mode .execute {
             border-radius: 4px;
-            padding: 6px 12px;
-            width: 100%;
+            /* padding: 6px 12px; */
+            /* width: 135px; */
         }
         button {
             padding: 8px 16px;
@@ -162,7 +166,7 @@
         </div>
         <div class="button-group">
             <button onclick="saveConfig()">保存配置</button>
-            <button class="execute" onclick="executeNow()">立即执行</button>
+            <button class="execute" onclick="executeNow()">复制到……</button>
         </div>
     </div>
 
@@ -196,7 +200,7 @@
                 checkboxGroups.forEach(group => group.classList.add('hidden'));
                 saveButton.style.display = 'none';
                 document.body.style.backgroundColor = 'transparent';
-                await window.electronAPI.setWindowSize(380, 50, false);
+                await window.electronAPI.setWindowSize(190, 50, false);
             } else {
                 container.classList.remove('simple-mode');
                 buttonGroup.classList.remove('simple-mode');
