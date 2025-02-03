@@ -33,17 +33,37 @@ function createWindow() {
     height: isSimpleMode ? 50 : 360,
     useContentSize: true,
     resizable: true,
-    minWidth: isSimpleMode ? 120 : 380,
+    minWidth: isSimpleMode ? 190 : 380,
     minHeight: 40,
     frame: !isSimpleMode,
+    titleBarStyle: isSimpleMode ? 'customButtonsOnHover' : 'default',
+    titleBarOverlay: isSimpleMode ? {
+      color: 'transparent',
+      symbolColor: 'transparent',
+      height: 0
+    } : false,
+    trafficLightPosition: { x: -100, y: -100 },
     transparent: true,
-    titleBarStyle: isSimpleMode ? 'hidden' : 'default',
+    vibrancy: 'window',
+    visualEffectState: 'active',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(app.getAppPath(), 'preload.js')
     }
   });
+
+  if (isSimpleMode) {
+    if (process.platform === 'darwin') {
+      mainWindow.setWindowButtonVisibility(false);
+    }
+    mainWindow.on('enter-full-screen', () => {
+      mainWindow.setWindowButtonVisibility(false);
+    });
+    mainWindow.on('leave-full-screen', () => {
+      mainWindow.setWindowButtonVisibility(false);
+    });
+  }
 
   // 监听窗口大小变化
   mainWindow.on('resize', () => {
@@ -436,13 +456,26 @@ ipcMain.handle('setWindowSize', async (event, width, height, hasFrame) => {
     const position = mainWindow.getPosition();
     const isAlwaysOnTop = mainWindow.isAlwaysOnTop();
     
-    // 更新当前窗口的设置
+    // 保存当前窗口状态
+    const currentConfig = store.get('config');
+    store.set('config', {
+      ...currentConfig,
+      simpleMode: !hasFrame
+    });
+    
+    // 设置窗口大小
     mainWindow.setSize(width, height);
-    mainWindow.setResizable(true);
+    mainWindow.setResizable(hasFrame);
+    
+    // 设置窗口按钮可见性
     if (process.platform === 'darwin') {
-      mainWindow.setWindowButtonVisibility(hasFrame);
+      mainWindow.setWindowButtonVisibility(!hasFrame);
     }
-    mainWindow.setAlwaysOnTop(isAlwaysOnTop);
+    
+    // 恢复置顶状态
+    if (isAlwaysOnTop) {
+      mainWindow.setAlwaysOnTop(true);
+    }
     
     return true;
   }
