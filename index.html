@@ -209,7 +209,7 @@
                 checkboxGroups.forEach(group => group.classList.add('hidden'));
                 saveButton.style.display = 'none';
                 document.body.style.backgroundColor = 'transparent';
-                await window.electronAPI.setWindowSize(190, 50, false);
+                await window.electronAPI.setWindowSize(190, 55, false);
             } else {
                 container.classList.remove('simple-mode');
                 buttonGroup.classList.remove('simple-mode');
@@ -242,6 +242,9 @@
             document.getElementById('imageCompression').value = config.imageCompression;
             document.getElementById('pathAliases').value = JSON.stringify(config.pathAliases);
             
+            // 更新执行按钮文案
+            updateExecuteButtonText(config);
+            
             // 加载置顶状态
             document.getElementById('alwaysOnTop').checked = config.alwaysOnTop || false;
 
@@ -265,7 +268,31 @@
             }
         }
 
-        // 保存配置
+        // 添加更新执行按钮文案的函数
+        function updateExecuteButtonText(config) {
+            const executeButton = document.querySelector('button.execute');
+            const targetDir = config.targetDir;
+            const aliases = config.pathAliases;
+            
+            // 获取第一个别名配置
+            const [alias, aliasValue] = Object.entries(aliases)[0];
+            
+            // 在目标路径中查找别名值
+            const parts = targetDir.split(aliasValue);
+            if (parts.length < 2) {
+                executeButton.textContent = '复制到...';
+                return;
+            }
+            
+            // 获取别名值之后的路径部分
+            const pathAfterAlias = targetDir.substring(targetDir.indexOf(aliasValue) + aliasValue.length);
+            const normalizedAlias = alias.startsWith('@') ? alias : '@';
+            const displayPath = normalizedAlias + pathAfterAlias;
+            
+            executeButton.textContent = `复制到 ${displayPath}`;
+        }
+
+        // 修改保存配置函数
         async function saveConfig() {
             const newConfig = {
                 targetDir: document.getElementById('targetDir').value,
@@ -274,6 +301,8 @@
             };
 
             await window.electronAPI.updateConfig(newConfig);
+            // 更新执行按钮文案
+            updateExecuteButtonText(newConfig);
             showNotification('配置已保存', 'success');
         }
 

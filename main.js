@@ -30,7 +30,7 @@ function createWindow() {
 
   mainWindow = new BrowserWindow({
     width: isSimpleMode ? 190 : 380,
-    height: isSimpleMode ? 50 : 360,
+    height: isSimpleMode ? 55 : 360,
     useContentSize: true,
     resizable: true,
     minWidth: isSimpleMode ? 190 : 380,
