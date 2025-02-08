@@ -30,7 +30,7 @@ function createWindow() {
 
   mainWindow = new BrowserWindow({
     width: isSimpleMode ? 190 : 380,
-    height: isSimpleMode ? 55 : 360,
+    height: isSimpleMode ? 85 : 360,
     useContentSize: true,
     resizable: true,
     minWidth: isSimpleMode ? 190 : 380,
@@ -77,6 +77,7 @@ function createWindow() {
   }
 
   mainWindow.loadFile('index.html');
+  // mainWindow.webContents.openDevTools();
 }
 
 // 默认配置
