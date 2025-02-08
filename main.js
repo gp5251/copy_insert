@@ -1,4 +1,4 @@
-import { app, clipboard, ipcMain, BrowserWindow, Menu } from 'electron';
+import { app, clipboard, ipcMain, BrowserWindow, Menu, shell } from 'electron';
 import Store from 'electron-store';
 import path from 'path';
 import fs from 'fs';
@@ -480,6 +480,21 @@ ipcMain.handle('setWindowSize', async (event, width, height, hasFrame) => {
     return true;
   }
   return false;
+});
+
+// 添加打开目标目录的 IPC 处理函数
+ipcMain.handle('openTargetDir', async () => {
+    try {
+        const config = store.get('config');
+        if (!fs.existsSync(config.targetDir)) {
+            ensureTargetDir();
+        }
+        await shell.openPath(config.targetDir);
+        return { success: true };
+    } catch (error) {
+        console.error('打开目标目录失败:', error);
+        return { success: false, message: error.message };
+    }
 });
 
 app.on('window-all-closed', () => {

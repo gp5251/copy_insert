@@ -9,5 +9,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setWindowSize: (width, height, hasFrame) => ipcRenderer.invoke('setWindowSize', width, height, hasFrame),
   onError: (callback) => ipcRenderer.on('error', (event, value) => callback(value)),
   onSuccess: (callback) => ipcRenderer.on('success', (event, value) => callback(value)),
-  onWindowResize: (callback) => ipcRenderer.on('window-resized', (event, value) => callback(value))
+  onWindowResize: (callback) => ipcRenderer.on('window-resized', (event, value) => callback(value)),
+  openTargetDir: () => ipcRenderer.invoke('openTargetDir')
 }); 
