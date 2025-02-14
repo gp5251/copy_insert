@@ -379,6 +379,31 @@
 
         // 页面加载时获取配置
         loadConfig();
+
+        // 当编辑目标目录或路径别名时，更新"复制到"按钮的文案
+        document.getElementById('targetDir').addEventListener('input', () => {
+            try {
+                const config = {
+                    targetDir: document.getElementById('targetDir').value,
+                    pathAliases: JSON.parse(document.getElementById('pathAliases').value)
+                };
+                updateExecuteButtonText(config);
+            } catch (e) {
+                // JSON解析错误时不更新
+            }
+        });
+
+        document.getElementById('pathAliases').addEventListener('input', () => {
+            try {
+                const config = {
+                    targetDir: document.getElementById('targetDir').value,
+                    pathAliases: JSON.parse(document.getElementById('pathAliases').value)
+                };
+                updateExecuteButtonText(config);
+            } catch (e) {
+                // JSON解析错误时不更新
+            }
+        });
     </script>
 </body>
 </html> 
