@@ -58,7 +58,8 @@
             font-weight: bold;
         }
         input[type="text"],
-        input[type="number"] {
+        input[type="number"],
+        select {
             width: 100%;
             padding: 8px;
             border: 1px solid #ddd;
@@ -86,6 +87,11 @@
         .button-group.simple-mode #btnOpen {
             padding: 6px 8px;
             font-size: 12px;
+        }
+        /* 精简模式下隐藏文本，只显示图标 */
+        .button-group.simple-mode #btnSave span,
+        .button-group.simple-mode #btnOpen span {
+            display: none;
         }
         button {
             padding: 8px 16px;
@@ -166,10 +172,77 @@
             opacity: 1;
             background-color: rgba(0,0,0,0.2);
         }
+        /* 配置项管理样式 */
+        .profile-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            -webkit-app-region: no-drag;
+            flex-shrink: 0;
+        }
+        .profile-group.hidden {
+            display: none;
+        }
+        .profile-group select {
+            flex: 1;
+        }
+        .profile-actions {
+            display: flex;
+            gap: 5px;
+        }
+        .profile-actions button {
+            padding: 8px;
+            font-size: 12px;
+        }
+        .profile-save-dialog {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1002;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        .profile-save-dialog.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .profile-save-content {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 300px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        .profile-save-content h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        .profile-save-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- 配置项选择 -->
+        <div class="profile-group">
+            <select id="profileSelect"></select>
+            <div class="profile-actions">
+                <button id="btnSaveProfile" title="保存为新配置">💾 新建</button>
+                <button id="btnDeleteProfile" title="删除当前配置">🗑️ 删除</button>
+            </div>
+        </div>
+        
         <div class="form-group">
             <label>目标目录</label>
             <input type="text" id="targetDir" placeholder="请输入目标目录路径">
@@ -187,9 +260,24 @@
             <label for="alwaysOnTop">窗口置顶</label>
         </div>
         <div class="button-group">
-            <button id="btnSave" onclick="saveConfig()">保存配置</button>
-            <button id="btnOpen" onclick="openTargetDir()">打开目标目录</button>
+            <button id="btnSave" onclick="saveConfig()">💾 <span>更新当前配置</span></button>
+            <button id="btnOpen" onclick="openTargetDir()">📂 <span>打开目标目录</span></button>
             <button class="execute" onclick="executeNow()">复制到……</button>
+        </div>
+    </div>
+
+    <!-- 保存配置项对话框 -->
+    <div id="profileSaveDialog" class="profile-save-dialog">
+        <div class="profile-save-content">
+            <h3>保存为新配置</h3>
+            <div class="form-group">
+                <label>配置名称</label>
+                <input type="text" id="profileName" placeholder="请输入配置名称">
+            </div>
+            <div class="profile-save-actions">
+                <button onclick="closeProfileSaveDialog()">取消</button>
+                <button onclick="saveProfileConfirm()">保存</button>
+            </div>
         </div>
     </div>
 
@@ -199,6 +287,8 @@
     <script>
         let isSimpleMode = false;
         let lastSize = { width: 380, height: 360 };
+        let profiles = {};
+        let activeProfile = 'default';
 
         // 监听窗口大小变化
         window.electronAPI.onWindowResize(({ width, height }) => {
@@ -214,6 +304,7 @@
             const buttonGroup = document.querySelector('.button-group');
             const formGroups = document.querySelectorAll('.form-group');
             const checkboxGroups = document.querySelectorAll('.checkbox-group');
+            const profileGroup = document.querySelector('.profile-group');
             const saveButton = document.getElementById('btnSave');
             
             if (isSimpleMode) {
@@ -221,6 +312,7 @@
                 buttonGroup.classList.add('simple-mode');
                 formGroups.forEach(group => group.classList.add('hidden'));
                 checkboxGroups.forEach(group => group.classList.add('hidden'));
+                profileGroup.classList.add('hidden');
                 saveButton.style.display = 'none';
                 document.body.style.backgroundColor = 'transparent';
                 await window.electronAPI.setWindowSize(190, 80, false);
@@ -229,6 +321,7 @@
                 buttonGroup.classList.remove('simple-mode');
                 formGroups.forEach(group => group.classList.remove('hidden'));
                 checkboxGroups.forEach(group => group.classList.remove('hidden'));
+                profileGroup.classList.remove('hidden');
                 saveButton.style.display = '';
                 document.body.style.backgroundColor = '#f5f5f5';
                 await window.electronAPI.setWindowSize(lastSize.width || 380, lastSize.height || 360, true);
@@ -269,16 +362,144 @@
                 const buttonGroup = document.querySelector('.button-group');
                 const formGroups = document.querySelectorAll('.form-group');
                 const checkboxGroups = document.querySelectorAll('.checkbox-group');
+                const profileGroup = document.querySelector('.profile-group');
                 const saveButton = document.querySelector('button:not(.execute)');
                 
                 container.classList.add('simple-mode');
                 buttonGroup.classList.add('simple-mode');
                 formGroups.forEach(group => group.classList.add('hidden'));
                 checkboxGroups.forEach(group => group.classList.add('hidden'));
+                profileGroup.classList.add('hidden');
                 saveButton.style.display = 'none';
                 document.body.style.backgroundColor = 'transparent';
             } else {
                 document.body.style.backgroundColor = '#f5f5f5';
+            }
+
+            // 加载配置项
+            await loadProfiles();
+        }
+
+        // 加载配置项
+        async function loadProfiles() {
+            const result = await window.electronAPI.getAllProfiles();
+            profiles = result.profiles;
+            activeProfile = result.activeProfile;
+            
+            // 更新下拉框
+            const profileSelect = document.getElementById('profileSelect');
+            profileSelect.innerHTML = '';
+            
+            Object.keys(profiles).forEach(profileName => {
+                const option = document.createElement('option');
+                option.value = profileName;
+                option.textContent = profileName;
+                if (profileName === activeProfile) {
+                    option.selected = true;
+                }
+                profileSelect.appendChild(option);
+            });
+            
+            // 更新保存按钮文本
+            updateSaveButtonText();
+            
+            // 添加事件监听
+            profileSelect.addEventListener('change', async () => {
+                const selectedProfile = profileSelect.value;
+                const result = await window.electronAPI.applyProfile(selectedProfile);
+                if (result.success) {
+                    activeProfile = selectedProfile;
+                    document.getElementById('targetDir').value = result.config.targetDir;
+                    document.getElementById('imageCompression').value = result.config.imageCompression;
+                    document.getElementById('pathAliases').value = JSON.stringify(result.config.pathAliases);
+                    document.getElementById('alwaysOnTop').checked = result.config.alwaysOnTop || false;
+                    
+                    // 更新执行按钮文案
+                    updateExecuteButtonText(result.config);
+                    
+                    // 更新保存按钮文本
+                    updateSaveButtonText();
+                    
+                    showNotification(`已应用配置: ${selectedProfile}`, 'success');
+                } else {
+                    showNotification(result.message, 'error');
+                }
+            });
+            
+            // 添加保存配置项按钮事件
+            document.getElementById('btnSaveProfile').addEventListener('click', showProfileSaveDialog);
+            
+            // 添加删除配置项按钮事件
+            document.getElementById('btnDeleteProfile').addEventListener('click', async () => {
+                const selectedProfile = profileSelect.value;
+                if (selectedProfile === 'default') {
+                    showNotification('不能删除默认配置', 'error');
+                    return;
+                }
+                
+                if (confirm(`确定要删除配置 "${selectedProfile}" 吗？`)) {
+                    const result = await window.electronAPI.deleteProfile(selectedProfile);
+                    if (result.success) {
+                        showNotification(`已删除配置: ${selectedProfile}`, 'success');
+                        await loadProfiles();
+                    } else {
+                        showNotification(result.message, 'error');
+                    }
+                }
+            });
+        }
+        
+        // 更新保存按钮文本
+        function updateSaveButtonText() {
+            const saveButton = document.getElementById('btnSave');
+            const saveButtonText = saveButton.querySelector('span');
+            if (activeProfile) {
+                saveButtonText.textContent = `更新配置: ${activeProfile}`;
+            } else {
+                saveButtonText.textContent = '更新当前配置';
+            }
+        }
+
+        // 显示保存配置项对话框
+        function showProfileSaveDialog() {
+            document.getElementById('profileName').value = '';
+            document.getElementById('profileSaveDialog').classList.add('show');
+        }
+        
+        // 关闭保存配置项对话框
+        function closeProfileSaveDialog() {
+            document.getElementById('profileSaveDialog').classList.remove('show');
+        }
+        
+        // 确认保存配置项
+        async function saveProfileConfirm() {
+            const profileName = document.getElementById('profileName').value.trim();
+            if (!profileName) {
+                showNotification('请输入配置名称', 'error');
+                return;
+            }
+            
+            // 获取当前配置
+            const config = {
+                targetDir: document.getElementById('targetDir').value,
+                imageCompression: parseInt(document.getElementById('imageCompression').value),
+                pathAliases: JSON.parse(document.getElementById('pathAliases').value),
+                alwaysOnTop: document.getElementById('alwaysOnTop').checked,
+                simpleMode: isSimpleMode
+            };
+            
+            // 保存配置项
+            const result = await window.electronAPI.saveProfile(profileName, config);
+            if (result.success) {
+                // 应用新配置
+                await window.electronAPI.applyProfile(profileName);
+                activeProfile = profileName;
+                
+                showNotification(`已保存并应用新配置: ${profileName}`, 'success');
+                closeProfileSaveDialog();
+                await loadProfiles();
+            } else {
+                showNotification(result.message, 'error');
             }
         }
 
@@ -311,13 +532,24 @@
             const newConfig = {
                 targetDir: document.getElementById('targetDir').value,
                 imageCompression: parseInt(document.getElementById('imageCompression').value),
-                pathAliases: JSON.parse(document.getElementById('pathAliases').value)
+                pathAliases: JSON.parse(document.getElementById('pathAliases').value),
+                alwaysOnTop: document.getElementById('alwaysOnTop').checked,
+                simpleMode: isSimpleMode
             };
 
+            // 更新当前配置
             await window.electronAPI.updateConfig(newConfig);
+            
+            // 同时更新当前配置项
+            if (activeProfile) {
+                await window.electronAPI.saveProfile(activeProfile, newConfig);
+                showNotification(`已更新配置: ${activeProfile}`, 'success');
+            } else {
+                showNotification('配置已保存', 'success');
+            }
+            
             // 更新执行按钮文案
             updateExecuteButtonText(newConfig);
-            showNotification('配置已保存', 'success');
         }
 
         // 添加立即执行函数
@@ -377,9 +609,6 @@
             showNotification(message, 'success');
         });
 
-        // 页面加载时获取配置
-        loadConfig();
-
         // 当编辑目标目录或路径别名时，更新"复制到"按钮的文案
         document.getElementById('targetDir').addEventListener('input', () => {
             try {
@@ -404,6 +633,9 @@
                 // JSON解析错误时不更新
             }
         });
+
+        // 页面加载时获取配置
+        loadConfig();
     </script>
 </body>
 </html> 

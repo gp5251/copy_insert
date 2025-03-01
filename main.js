@@ -20,6 +20,14 @@ const store = new Store({
   clearInvalidConfig: true
 });
 
+// 添加配置项存储
+const configStore = new Store({
+  cwd: app.getPath('userData'),
+  name: 'configProfiles',
+  fileExtension: 'json',
+  clearInvalidConfig: true
+});
+
 let mainWindow;
 
 const exec = promisify(execCallback);
@@ -94,6 +102,14 @@ const DEFAULT_CONFIG = {
 // 确保配置存在
 if (!store.get('config')) {
   store.set('config', DEFAULT_CONFIG);
+}
+
+// 确保配置项存储存在
+if (!configStore.get('profiles')) {
+  configStore.set('profiles', {
+    'default': DEFAULT_CONFIG
+  });
+  configStore.set('activeProfile', 'default');
 }
 
 // 确保目标目录存在
@@ -420,6 +436,57 @@ ipcMain.handle('updateConfig', (event, newConfig) => {
 
 ipcMain.handle('getConfig', () => {
   return store.get('config');
+});
+
+// 添加获取所有配置项的处理函数
+ipcMain.handle('getAllProfiles', () => {
+  return {
+    profiles: configStore.get('profiles'),
+    activeProfile: configStore.get('activeProfile')
+  };
+});
+
+// 添加保存配置项的处理函数
+ipcMain.handle('saveProfile', (event, profileName, config) => {
+  const profiles = configStore.get('profiles') || {};
+  profiles[profileName] = config;
+  configStore.set('profiles', profiles);
+  return { success: true };
+});
+
+// 添加应用配置项的处理函数
+ipcMain.handle('applyProfile', (event, profileName) => {
+  const profiles = configStore.get('profiles') || {};
+  if (profiles[profileName]) {
+    store.set('config', profiles[profileName]);
+    configStore.set('activeProfile', profileName);
+    return { success: true, config: profiles[profileName] };
+  }
+  return { success: false, message: '配置项不存在' };
+});
+
+// 添加删除配置项的处理函数
+ipcMain.handle('deleteProfile', (event, profileName) => {
+  const profiles = configStore.get('profiles') || {};
+  const activeProfile = configStore.get('activeProfile');
+  
+  if (profileName === 'default') {
+    return { success: false, message: '不能删除默认配置' };
+  }
+  
+  if (profiles[profileName]) {
+    delete profiles[profileName];
+    configStore.set('profiles', profiles);
+    
+    // 如果删除的是当前激活的配置，则切换到默认配置
+    if (activeProfile === profileName) {
+      configStore.set('activeProfile', 'default');
+      store.set('config', profiles['default']);
+    }
+    
+    return { success: true };
+  }
+  return { success: false, message: '配置项不存在' };
 });
 
 // 添加置顶控制处理

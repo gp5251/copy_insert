@@ -10,5 +10,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onError: (callback) => ipcRenderer.on('error', (event, value) => callback(value)),
   onSuccess: (callback) => ipcRenderer.on('success', (event, value) => callback(value)),
   onWindowResize: (callback) => ipcRenderer.on('window-resized', (event, value) => callback(value)),
-  openTargetDir: () => ipcRenderer.invoke('openTargetDir')
+  openTargetDir: () => ipcRenderer.invoke('openTargetDir'),
+  getAllProfiles: () => ipcRenderer.invoke('getAllProfiles'),
+  saveProfile: (profileName, config) => ipcRenderer.invoke('saveProfile', profileName, config),
+  applyProfile: (profileName) => ipcRenderer.invoke('applyProfile', profileName),
+  deleteProfile: (profileName) => ipcRenderer.invoke('deleteProfile', profileName)
 }); 
