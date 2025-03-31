@@ -39,6 +39,12 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: isSimpleMode ? 190 : 380,
     height: isSimpleMode ? 85 : 360,
+
+    // width: 380,  // 正常模式默认宽度
+    // height: 360, // 正常模式默认高度
+    // minWidth: 380,
+    // minHeight: 360,
+
     useContentSize: true,
     resizable: true,
     // minWidt: isSimpleMode ? 190 : 380,
@@ -84,8 +90,19 @@ function createWindow() {
     mainWindow.setAlwaysOnTop(true);
   }
 
+  // 加载应用
   mainWindow.loadFile('index.html');
-  // mainWindow.webContents.openDevTools();
+
+  // 监听模式切换事件
+  // ipcMain.on('toggle-mode', (event, isCompactMode) => {
+  //   if (isCompactMode) {
+  //     mainWindow.setSize(190, 95); // 精简模式尺寸
+  //     mainWindow.setMinimumSize(190, 95);
+  //   } else {
+  //     mainWindow.setSize(380, 360); // 正常模式尺寸
+  //     mainWindow.setMinimumSize(380, 360);
+  //   }
+  // });
 }
 
 // 默认配置
@@ -569,4 +586,4 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
-}); 
+});
