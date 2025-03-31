@@ -1,31 +1,136 @@
-import { app, clipboard, ipcMain, BrowserWindow, Menu, shell } from 'electron';
-import Store from 'electron-store';
-import path from 'path';
-import fs from 'fs';
-import sharp from 'sharp';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import { exec as execCallback } from 'child_process';
-import { promisify } from 'util';
+const { app, clipboard, ipcMain, BrowserWindow, Menu, shell, dialog } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const { exec: execCallback } = require('child_process');
+const { promisify } = require('util');
+const logger = require('./logger');
+let sharp;
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+try {
+  sharp = require('sharp');
+} catch (error) {
+  logger.error('加载 sharp 模块失败:', error);
+}
 
-// 配置 electron-store
-Store.initRenderer();
-const store = new Store({
+/**
+ * 简单的存储类，用于替代 electron-store
+ */
+class SimpleStore {
+  /**
+   * 创建一个新的存储实例
+   * @param {Object} options 配置选项
+   * @param {string} options.name 存储文件名
+   * @param {string} options.cwd 存储目录
+   * @param {string} options.fileExtension 文件扩展名
+   */
+  constructor(options = {}) {
+    this.name = options.name || 'config';
+    this.cwd = options.cwd || app.getPath('userData');
+    this.fileExtension = options.fileExtension || 'json';
+    this.filePath = path.join(this.cwd, `${this.name}.${this.fileExtension}`);
+    
+    // 确保目录存在
+    if (!fs.existsSync(this.cwd)) {
+      fs.mkdirSync(this.cwd, { recursive: true });
+    }
+    
+    // 初始化存储
+    this.data = this.read();
+  }
+  
+  /**
+   * 读取存储文件
+   * @returns {Object} 存储的数据
+   */
+  read() {
+    try {
+      if (fs.existsSync(this.filePath)) {
+        const data = fs.readFileSync(this.filePath, 'utf8');
+        return JSON.parse(data);
+      }
+    } catch (error) {
+      logger.error('读取存储文件失败:', error);
+    }
+    return {};
+  }
+  
+  /**
+   * 写入存储文件
+   */
+  write() {
+    try {
+      fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2), 'utf8');
+    } catch (error) {
+      logger.error('写入存储文件失败:', error);
+    }
+  }
+  
+  /**
+   * 获取存储的值
+   * @param {string} key 键名
+   * @param {*} defaultValue 默认值
+   * @returns {*} 存储的值
+   */
+  get(key) {
+    if (key === undefined) {
+      return this.data;
+    }
+    return this.data[key];
+  }
+  
+  /**
+   * 设置存储的值
+   * @param {string|Object} keyOrObject 键名或对象
+   * @param {*} value 值
+   */
+  set(keyOrObject, value) {
+    if (typeof keyOrObject === 'object') {
+      this.data = { ...this.data, ...keyOrObject };
+    } else {
+      this.data[keyOrObject] = value;
+    }
+    this.write();
+  }
+  
+  /**
+   * 删除存储的值
+   * @param {string} key 键名
+   */
+  delete(key) {
+    delete this.data[key];
+    this.write();
+  }
+  
+  /**
+   * 清空存储
+   */
+  clear() {
+    this.data = {};
+    this.write();
+  }
+  
+  /**
+   * 检查是否存在键
+   * @param {string} key 键名
+   * @returns {boolean} 是否存在
+   */
+  has(key) {
+    return key in this.data;
+  }
+}
+
+// 配置存储
+const store = new SimpleStore({
   cwd: app.getPath('userData'),
   name: 'config',
-  fileExtension: 'json',
-  clearInvalidConfig: true
+  fileExtension: 'json'
 });
 
 // 添加配置项存储
-const configStore = new Store({
+const configStore = new SimpleStore({
   cwd: app.getPath('userData'),
   name: 'configProfiles',
-  fileExtension: 'json',
-  clearInvalidConfig: true
+  fileExtension: 'json'
 });
 
 let mainWindow;
@@ -38,17 +143,11 @@ function createWindow() {
 
   mainWindow = new BrowserWindow({
     width: isSimpleMode ? 190 : 380,
-    height: isSimpleMode ? 85 : 360,
-
-    // width: 380,  // 正常模式默认宽度
-    // height: 360, // 正常模式默认高度
-    // minWidth: 380,
-    // minHeight: 360,
-
+    height: isSimpleMode ? 90 : 390,
     useContentSize: true,
     resizable: true,
-    // minWidt: isSimpleMode ? 190 : 380,
-    minHeight: 50,
+    minWidt: isSimpleMode ? 190 : 390,
+    minHeight: 80,
     frame: false,
     titleBarStyle: 'customButtonsOnHover',
     titleBarOverlay: {
@@ -208,28 +307,17 @@ function applyPathAlias(filePath, config) {
   const targetDir = config.targetDir;
   const aliases = config.pathAliases;
   
-  console.log('处理路径别名:', {
-    原始路径: filePath,
-    目标目录: targetDir,
-    别名配置: aliases
-  });
-
   // 获取第一个别名配置
   const [alias, aliasValue] = Object.entries(aliases)[0];
   
   // 在目标路径中查找别名值
   const parts = targetDir.split(aliasValue);
   if (parts.length < 2) {
-    console.log('未找到别名值在目标路径中的位置');
     return filePath;
   }
 
   // 获取别名值之后的路径部分
   const pathAfterAlias = targetDir.substring(targetDir.indexOf(aliasValue) + aliasValue.length);
-  console.log('别名截断信息:', {
-    别名值: aliasValue,
-    截断后路径: pathAfterAlias
-  });
 
   // 如果是目标目录本身
   if (filePath === targetDir) {
@@ -239,13 +327,11 @@ function applyPathAlias(filePath, config) {
 
   // 获取文件相对于目标目录的路径
   const relativePath = path.relative(targetDir, filePath);
-  console.log('相对路径:', relativePath);
 
   // 构建最终路径
   const normalizedAlias = alias.startsWith('@') ? alias : '@';
   const finalPath = normalizedAlias + pathAfterAlias + '/' + relativePath;
   
-  console.log('最终路径:', finalPath);
   return finalPath;
 }
 
@@ -283,16 +369,12 @@ async function getSelectedFiles() {
     `;
 
     try {
-      console.log('执行 AppleScript 获取文件...');
       const { stdout, stderr } = await exec(script);
-      console.log('AppleScript 输出:', stdout);
-      if (stderr) console.error('AppleScript 错误:', stderr);
       
       const files = stdout.trim().split('\n').filter(Boolean);
-      console.log('获取到的文件列表:', files);
       return files;
     } catch (error) {
-      console.error('获取macOS文件选择失败:', error);
+      logger.error('获取macOS文件选择失败:', error);
       if (error.message.includes('not authorized') || error.message.includes('permission')) {
         mainWindow.webContents.send('error', '需要授权访问Finder。请在系统偏好设置中允许应用访问文件和文件夹。');
       }
@@ -313,7 +395,7 @@ async function getSelectedFiles() {
       const { stdout } = await exec('powershell -command "' + script + '"');
       return stdout.trim().split('\n').filter(Boolean);
     } catch (error) {
-      console.error('获取Windows文件选择失败:', error);
+      logger.error('获取Windows文件选择失败:', error);
       return [];
     }
   }
@@ -323,35 +405,35 @@ async function getSelectedFiles() {
 
 // 处理文件复制
 async function handleFileCopy(filePaths) {
-  console.log('开始处理文件复制:', filePaths);
+  logger.info('开始处理文件复制:', filePaths);
   const config = store.get('config');
   ensureTargetDir();
 
   const results = [];
   for (const sourcePath of filePaths) {
-    console.log('处理文件:', sourcePath);
+    logger.debug('处理文件:', sourcePath);
     const fileName = path.basename(sourcePath);
     let targetPath = path.join(config.targetDir, fileName);
     targetPath = generateUniqueFilename(targetPath);
-    console.log('目标路径:', targetPath);
+    logger.debug('目标路径:', targetPath);
 
     const ext = path.extname(sourcePath).toLowerCase();
     const isImage = Object.keys(SUPPORTED_IMAGE_FORMATS).includes(ext);
 
     try {
       if (isImage) {
-        console.log('处理图片文件...');
+        logger.info('处理图片文件...');
         await processImage(sourcePath, targetPath);
-        console.log('图片处理完成');
+        logger.info('图片处理完成');
       } else {
-        console.log('复制普通文件...');
+        logger.info('复制普通文件...');
         fs.copyFileSync(sourcePath, targetPath);
-        console.log('文件复制完成');
+        logger.info('文件复制完成');
       }
 
       results.push(targetPath);
     } catch (error) {
-      console.error(`处理文件失败: ${sourcePath}`, error);
+      logger.error(`处理文件失败: ${sourcePath}`, error);
       mainWindow.webContents.send('error', `处理文件失败: ${fileName}`);
     }
   }
@@ -367,7 +449,7 @@ async function handleFileCopy(filePaths) {
       clipboardText = applyPathAlias(config.targetDir, config);
     }
 
-    console.log('写入剪贴板:', clipboardText);
+    logger.info('写入剪贴板:', clipboardText);
     clipboard.writeText(clipboardText);
     mainWindow.webContents.send('success', `已处理 ${results.length} 个文件`);
   }
@@ -391,7 +473,7 @@ function setupContextMenu() {
                 mainWindow.webContents.send('error', '请先选择文件');
               }
             } catch (error) {
-              console.error('处理文件失败:', error);
+              logger.error('处理文件失败:', error);
               mainWindow.webContents.send('error', error.message);
             }
           }
@@ -415,7 +497,7 @@ function setupContextMenu() {
               mainWindow.webContents.send('error', '请先选择文件');
             }
           } catch (error) {
-            console.error('处理文件失败:', error);
+            logger.error('处理文件失败:', error);
             mainWindow.webContents.send('error', error.message);
           }
         }
@@ -508,7 +590,6 @@ ipcMain.handle('deleteProfile', (event, profileName) => {
 
 // 添加置顶控制处理
 ipcMain.handle('setAlwaysOnTop', (event, value) => {
-  console.log('设置窗口置顶:', value);
   if (mainWindow) {
     mainWindow.setAlwaysOnTop(value);
     return true;
@@ -518,10 +599,8 @@ ipcMain.handle('setAlwaysOnTop', (event, value) => {
 
 // 处理立即执行请求
 ipcMain.handle('executeNow', async () => {
-  console.log('手动触发执行');
   try {
     const files = await getSelectedFiles();
-    console.log('获取到的文件:', files);
     if (files.length > 0) {
       await handleFileCopy(files);
       return { success: true, message: '执行成功' };
@@ -529,7 +608,7 @@ ipcMain.handle('executeNow', async () => {
       throw new Error('请先在Finder中选择文件');
     }
   } catch (error) {
-    console.error('执行失败:', error);
+    logger.error('执行失败:', error);
     // 确保错误信息被正确传递到渲染进程
     throw new Error(error.message || '执行失败');
   }
@@ -577,9 +656,18 @@ ipcMain.handle('openTargetDir', async () => {
         await shell.openPath(config.targetDir);
         return { success: true };
     } catch (error) {
-        console.error('打开目标目录失败:', error);
+        logger.error('打开目标目录失败:', error);
         return { success: false, message: error.message };
     }
+});
+
+// 添加关闭窗口的 IPC 处理函数
+ipcMain.handle('closeWindow', () => {
+  if (mainWindow) {
+    mainWindow.close();
+    return true;
+  }
+  return false;
 });
 
 app.on('window-all-closed', () => {

@@ -14,5 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAllProfiles: () => ipcRenderer.invoke('getAllProfiles'),
   saveProfile: (profileName, config) => ipcRenderer.invoke('saveProfile', profileName, config),
   applyProfile: (profileName) => ipcRenderer.invoke('applyProfile', profileName),
-  deleteProfile: (profileName) => ipcRenderer.invoke('deleteProfile', profileName)
+  deleteProfile: (profileName) => ipcRenderer.invoke('deleteProfile', profileName),
+  closeWindow: () => ipcRenderer.invoke('closeWindow'),
+  exitApp: () => ipcRenderer.invoke('closeWindow')
 }); 
