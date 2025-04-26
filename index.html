@@ -44,6 +44,10 @@
             display: block;
             width: 100%;
         }
+        .lineItems{
+            display: flex;
+            gap: 10px;
+        }
         .form-group {
             margin-bottom: 15px;
             -webkit-app-region: no-drag;
@@ -88,6 +92,11 @@
             padding: 6px 8px;
             font-size: 12px;
         }
+        .button-group.simple-mode #btnCompress {
+            padding: 6px 8px;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
         .button-group.simple-mode #btnSave {
             display: none;
         }
@@ -115,6 +124,13 @@
         button.execute:hover {
             background-color: #248a3d;
         }
+        button#btnCompress {
+            background-color: #ff9500;
+            flex: 1;
+        }
+        button#btnCompress:hover {
+            background-color: #c77600;
+        }
         .notification {
             position: fixed;
             bottom: -100px;
@@ -140,6 +156,9 @@
         }
         .notification.error {
             border-left: 3px solid #ff3b30;
+        }
+        .notification.info {
+            border-left: 3px solid #007aff;
         }
         .checkbox-group {
             display: flex;
@@ -256,22 +275,29 @@
             <label>目标目录</label>
             <input type="text" id="targetDir" placeholder="请输入目标目录路径">
         </div>
-        <div class="form-group">
-            <label>图片压缩质量 (1-100)</label>
-            <input type="number" id="imageCompression" min="1" max="100" value="80">
-        </div>
-        <div class="form-group">
-            <label>路径别名配置 (JSON格式)</label>
-            <input type="text" id="pathAliases" placeholder='{"@": "assets"}'>
+        <div class="lineItems">
+            <div class="form-group">
+                <label>图片压缩质量 (1-100)</label>
+                <input type="number" id="imageCompression" min="1" max="100" value="80">
+            </div>
+            <div class="form-group">
+                <label>路径别名配置 (JSON格式)</label>
+                <input type="text" id="pathAliases" placeholder='{"@": "assets"}'>
+            </div>
         </div>
         <div class="checkbox-group">
             <input type="checkbox" id="alwaysOnTop" onchange="toggleAlwaysOnTop(this.checked)">
             <label for="alwaysOnTop">窗口置顶</label>
         </div>
-        <div class="button-group">
-            <button id="btnSave" onclick="saveConfig()">💾 <span>更新当前配置</span></button>
-            <button id="btnOpen" onclick="openTargetDir()">📂 <span>打开目标目录</span></button>
-            <button class="execute" onclick="executeNow()">复制到……</button>
+        <div class="button-group" id="buttonGroup">
+            <button class="execute" id="executeNow">复制到目标目录</button>
+            <button id="btnCompress" title="使用当前设置的压缩质量压缩选中的图片">压缩图片</button>
+            <button id="btnOpen">
+                <span>打开目录</span>
+            </button>
+            <button id="btnSave">
+                <span>保存配置</span>
+            </button>
         </div>
     </div>
 
@@ -657,6 +683,30 @@
                 console.error('关闭窗口失败:', error);
             }
         }
+
+        // 添加压缩图片函数
+        async function compressSelectedImages() {
+            try {
+                // 获取当前界面上的压缩质量值
+                const quality = parseInt(document.getElementById('imageCompression').value);
+                showNotification(`正在处理选中的图片，压缩质量: ${quality}...`, 'info');
+                const result = await window.electronAPI.compressSelected(quality);
+                if (result.success) {
+                    showNotification(`压缩完成: ${result.compressedCount} 个图片已处理，使用压缩质量: ${result.quality}${result.skippedCount > 0 ? `，跳过 ${result.skippedCount} 个非图片文件` : ''}`, 'success');
+                } else {
+                    showNotification(result.message, 'error');
+                }
+            } catch (error) {
+                console.error('压缩图片失败:', error);
+                showNotification(error.toString(), 'error');
+            }
+        }
+
+        // 绑定按钮事件
+        document.getElementById('executeNow').addEventListener('click', executeNow);
+        document.getElementById('btnSave').addEventListener('click', saveConfig);
+        document.getElementById('btnOpen').addEventListener('click', openTargetDir);
+        document.getElementById('btnCompress').addEventListener('click', compressSelectedImages);
     </script>
 </body>
 </html>

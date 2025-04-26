@@ -266,7 +266,7 @@ const SUPPORTED_IMAGE_FORMATS = {
 };
 
 // 处理图片
-async function processImage(sourcePath, targetPath) {
+async function processImage(sourcePath, targetPath, quality) {
   const config = store.get('config');
   const ext = path.extname(sourcePath).toLowerCase();
   const format = SUPPORTED_IMAGE_FORMATS[ext] || 'jpeg';
@@ -276,22 +276,22 @@ async function processImage(sourcePath, targetPath) {
   // 根据不同格式设置压缩选项
   switch (format) {
     case 'jpeg':
-      sharpInstance = sharpInstance.jpeg({ quality: config.imageCompression });
+      sharpInstance = sharpInstance.jpeg({ quality: quality || config.imageCompression });
       break;
     case 'png':
-      sharpInstance = sharpInstance.png({ quality: config.imageCompression });
+      sharpInstance = sharpInstance.png({ quality: quality || config.imageCompression });
       break;
     case 'webp':
-      sharpInstance = sharpInstance.webp({ quality: config.imageCompression });
+      sharpInstance = sharpInstance.webp({ quality: quality || config.imageCompression });
       break;
     case 'avif':
-      sharpInstance = sharpInstance.avif({ quality: config.imageCompression });
+      sharpInstance = sharpInstance.avif({ quality: quality || config.imageCompression });
       break;
     case 'heif':
-      sharpInstance = sharpInstance.heif({ quality: config.imageCompression });
+      sharpInstance = sharpInstance.heif({ quality: quality || config.imageCompression });
       break;
     case 'tiff':
-      sharpInstance = sharpInstance.tiff({ quality: config.imageCompression });
+      sharpInstance = sharpInstance.tiff({ quality: quality || config.imageCompression });
       break;
     // GIF 格式不支持质量压缩，但支持调整颜色数量
     case 'gif':
@@ -537,6 +537,11 @@ ipcMain.handle('getConfig', () => {
   return store.get('config');
 });
 
+// 添加压缩选中图片的 IPC 处理函数
+ipcMain.handle('compressSelected', async (event, quality) => {
+  return await compressSelectedImages(quality);
+});
+
 // 添加获取所有配置项的处理函数
 ipcMain.handle('getAllProfiles', () => {
   return {
@@ -669,6 +674,90 @@ ipcMain.handle('closeWindow', () => {
   }
   return false;
 });
+
+// 添加原地压缩图片功能
+async function compressSelectedImages(customQuality) {
+  try {
+    // 获取选中的文件
+    const files = await getSelectedFiles();
+    
+    if (files.length === 0) {
+      mainWindow.webContents.send('error', '请先选择图片文件');
+      return { success: false, message: '未选择文件' };
+    }
+    
+    // 获取配置，如果提供了自定义压缩质量，则使用它
+    const config = store.get('config');
+    // 使用传入的自定义压缩质量，如果有的话
+    const imageCompression = customQuality || config.imageCompression;
+    let compressedCount = 0;
+    let skippedCount = 0;
+    
+    // 筛选图片文件并处理
+    for (const filePath of files) {
+      const ext = path.extname(filePath).toLowerCase();
+      const isImage = Object.keys(SUPPORTED_IMAGE_FORMATS).includes(ext);
+      
+      if (!isImage) {
+        logger.info(`跳过非图片文件: ${filePath}`);
+        skippedCount++;
+        continue;
+      }
+      
+      try {
+        logger.info(`开始压缩图片: ${filePath}`);
+        
+        // 创建临时文件路径
+        const tempFilePath = filePath + '.temp' + ext;
+        
+        // 压缩图片到临时文件，传递自定义压缩质量
+        await processImage(filePath, tempFilePath, imageCompression);
+        
+        // 替换原文件
+        fs.unlinkSync(filePath);
+        fs.renameSync(tempFilePath, filePath);
+        
+        compressedCount++;
+        logger.info(`图片压缩完成: ${filePath}`);
+      } catch (error) {
+        logger.error(`压缩图片失败: ${filePath}`, error);
+        mainWindow.webContents.send('error', `压缩图片失败: ${path.basename(filePath)}`);
+      }
+    }
+    
+    // 发送结果到渲染进程
+    if (compressedCount > 0) {
+      mainWindow.webContents.send('success', `已压缩 ${compressedCount} 个图片文件，使用压缩质量: ${imageCompression}${skippedCount > 0 ? `，跳过 ${skippedCount} 个非图片文件` : ''}`);
+      return { 
+        success: true, 
+        message: `压缩完成`, 
+        compressedCount, 
+        skippedCount,
+        quality: imageCompression
+      };
+    } else if (skippedCount > 0) {
+      mainWindow.webContents.send('error', `未找到可压缩的图片文件，已跳过 ${skippedCount} 个非图片文件`);
+      return { 
+        success: false, 
+        message: '未找到图片文件', 
+        compressedCount, 
+        skippedCount 
+      };
+    } else {
+      mainWindow.webContents.send('error', '未找到可压缩的图片文件');
+      return { 
+        success: false, 
+        message: '未找到图片文件', 
+        compressedCount, 
+        skippedCount 
+      };
+    }
+  } catch (error) {
+    logger.error('压缩图片失败:', error);
+    mainWindow.webContents.send('error', `压缩图片失败: ${error.message}`);
+    return { success: false, message: error.message };
+  }
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
