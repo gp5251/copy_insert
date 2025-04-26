@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, shell } = require('electron');
+const { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, shell, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
@@ -27,7 +27,8 @@ if (!profileStore.has('profiles')) {
     width: 800,
     height: 600,
     hasFrame: false,
-    pathAliases: {"@": "src"}
+    pathAliases: {"@": "src"},
+    compressOnCopy: false
   };
 
   profileStore.set({
@@ -52,7 +53,8 @@ if (!store.has('targetDir')) {
     width: 800,
     height: 600,
     hasFrame: false,
-    pathAliases: {"@": "src"}
+    pathAliases: {"@": "src"},
+    compressOnCopy: false
   };
   store.set(defaultConfig);
 }
@@ -68,6 +70,221 @@ function generateUniqueFilename(originalName, extension) {
   const timestamp = new Date().getTime();
   const randomString = Math.random().toString(36).substring(2, 8);
   return `${originalName}_${timestamp}_${randomString}.${extension}`;
+}
+
+// 获取选中的文件路径（从系统剪贴板）
+function getSelectedFilePaths() {
+  if (process.platform === 'darwin') {
+    // macOS使用NSPasteboard
+    try {
+      // 尝试获取剪贴板中的文件路径
+      const text = clipboard.read('public.file-url');
+      if (!text) return null;
+      
+      const selectedFiles = text.split('\n')
+        .filter(url => url.trim() !== '')
+        .map(url => {
+          // 移除file://前缀并处理URL编码
+          return decodeURI(url.replace('file://', ''));
+        });
+      
+      console.log('选中的文件:', selectedFiles);
+      return selectedFiles.length > 0 ? selectedFiles : null;
+    } catch (error) {
+      console.error('读取剪贴板文件失败:', error);
+      return null;
+    }
+  } else if (process.platform === 'win32') {
+    // Windows处理
+    try {
+      const rawBuffer = clipboard.readBuffer('FileNameW');
+      if (!rawBuffer || rawBuffer.length === 0) return null;
+      
+      const selectedFiles = rawBuffer.toString('ucs2')
+        .replace(/\\/g, '/')
+        .replace(/\u0000/g, '\n')
+        .trim()
+        .split('\n')
+        .filter(file => file.trim() !== '');
+      
+      console.log('选中的文件:', selectedFiles);
+      return selectedFiles.length > 0 ? selectedFiles : null;
+    } catch (error) {
+      console.error('读取剪贴板文件失败:', error);
+      return null;
+    }
+  }
+  
+  return null;
+}
+
+// 尝试另一种方式获取选中的文件（使用clipboard.readImage或其他格式）
+function getSelectedFilesAlternative() {
+  try {
+    // 检查剪贴板是否有文件列表（新方法）
+    const formats = clipboard.availableFormats();
+    console.log('可用的剪贴板格式:', formats);
+    
+    // macOS特有的格式
+    if (process.platform === 'darwin') {
+      if (formats.includes('NSFilenamesPboardType')) {
+        return clipboard.read('NSFilenamesPboardType').split('\n').filter(Boolean);
+      }
+      
+      if (formats.includes('Apple files promise pasteboard type')) {
+        return clipboard.read('Apple files promise pasteboard type').split('\n').filter(Boolean);
+      }
+    }
+    
+    // 通用格式
+    for (const format of formats) {
+      if (format.includes('file') || format.includes('File')) {
+        const content = clipboard.read(format);
+        if (content) {
+          const files = content.split('\n').filter(Boolean);
+          if (files.length > 0) return files;
+        }
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('另一种方式读取剪贴板失败:', error);
+    return null;
+  }
+}
+
+// 获取macOS Finder中选中的文件（使用AppleScript）
+function getFinderSelectedFiles() {
+  if (process.platform !== 'darwin') {
+    return null; // 仅支持macOS
+  }
+  
+  try {
+    const { execSync } = require('child_process');
+    
+    // 执行AppleScript命令获取Finder中选中的文件
+    const script = `
+    tell application "Finder"
+      set theSelection to selection
+      set selectedItems to {}
+      repeat with theItem in theSelection
+        set end of selectedItems to (POSIX path of (theItem as alias))
+      end repeat
+      return selectedItems
+    end tell
+    `;
+    
+    // 执行AppleScript并解析结果
+    const result = execSync(`osascript -e '${script}'`, { encoding: 'utf8' });
+    
+    if (result) {
+      // 解析返回的文件路径（AppleScript返回的是逗号分隔的路径）
+      const files = result.trim().split(',').map(path => path.trim());
+      console.log('Finder选中的文件:', files);
+      return files.length > 0 ? files : null;
+    }
+  } catch (error) {
+    console.error('获取Finder选中文件失败:', error);
+  }
+  
+  return null;
+}
+
+// 为其他平台提供的获取文件选择函数
+function getExplorerSelectedFiles() {
+  // Windows可以使用PowerShell或COM接口获取，但复杂度较高
+  // 此处暂不实现，可后续扩展
+  return null;
+}
+
+// 从任何可能的来源获取选中的文件
+function getSelectedFiles() {
+  // 先尝试从Finder/文件管理器获取
+  let files = process.platform === 'darwin' ? getFinderSelectedFiles() : getExplorerSelectedFiles();
+  if (files && files.length > 0) return files;
+  
+  // 尝试从剪贴板获取
+  files = getSelectedFilePaths();
+  if (files && files.length > 0) return files;
+  
+  // 尝试另一种剪贴板方法
+  files = getSelectedFilesAlternative();
+  if (files && files.length > 0) return files;
+  
+  return null;
+}
+
+// 原地压缩图片函数
+async function compressImageInPlace(filePath, quality) {
+  try {
+    const extname = path.extname(filePath).toLowerCase();
+    const supportedFormats = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'];
+    
+    if (!supportedFormats.includes(extname)) {
+      return { 
+        success: false, 
+        path: filePath, 
+        error: '不支持的文件格式' 
+      };
+    }
+    
+    // 创建临时文件路径
+    const tempPath = `${filePath}.temp${extname}`;
+    const config = store.get();
+    const compressQuality = quality || config.quality || 80;
+    
+    let sharpInstance = sharp(filePath);
+    
+    // 根据文件格式设置压缩参数
+    switch (extname) {
+      case '.jpg':
+      case '.jpeg':
+        sharpInstance = sharpInstance.jpeg({ quality: compressQuality });
+        break;
+      case '.png':
+        sharpInstance = sharpInstance.png({ quality: compressQuality });
+        break;
+      case '.webp':
+        sharpInstance = sharpInstance.webp({ quality: compressQuality });
+        break;
+      case '.avif':
+        sharpInstance = sharpInstance.avif({ quality: compressQuality });
+        break;
+      default:
+        sharpInstance = sharpInstance.jpeg({ quality: compressQuality });
+    }
+    
+    // 保存到临时文件
+    await sharpInstance.toFile(tempPath);
+    
+    // 获取原始文件和压缩后文件大小
+    const originalSize = fs.statSync(filePath).size;
+    const compressedSize = fs.statSync(tempPath).size;
+    
+    // 用压缩后的文件替换原始文件
+    fs.unlinkSync(filePath);
+    fs.renameSync(tempPath, filePath);
+    
+    // 计算压缩比例
+    const compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toFixed(2);
+    
+    return {
+      success: true,
+      path: filePath,
+      originalSize,
+      compressedSize,
+      compressionRatio,
+      quality: compressQuality
+    };
+  } catch (error) {
+    console.error('压缩图片失败:', error);
+    return {
+      success: false,
+      path: filePath,
+      error: error.message
+    };
+  }
 }
 
 let mainWindow;
@@ -98,6 +315,7 @@ async function processImage(filePaths, quality) {
   const results = [];
   const config = store.get();
   const targetDir = config.targetDir;
+  const shouldCompress = config.compressOnCopy || false;
 
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true });
@@ -125,22 +343,24 @@ async function processImage(filePaths, quality) {
       let sharpInstance = sharp(filePath);
       
       // Set output options based on target format
-      switch (targetFormat.toLowerCase()) {
-        case 'jpeg':
-        case 'jpg':
-          sharpInstance = sharpInstance.jpeg({ quality: quality || config.quality || 80 });
-          break;
-        case 'png':
-          sharpInstance = sharpInstance.png({ quality: quality || config.quality || 80 });
-          break;
-        case 'webp':
-          sharpInstance = sharpInstance.webp({ quality: quality || config.quality || 80 });
-          break;
-        case 'avif':
-          sharpInstance = sharpInstance.avif({ quality: quality || config.quality || 80 });
-          break;
-        default:
-          sharpInstance = sharpInstance.jpeg({ quality: quality || config.quality || 80 });
+      if (shouldCompress) {
+        switch (targetFormat.toLowerCase()) {
+          case 'jpeg':
+          case 'jpg':
+            sharpInstance = sharpInstance.jpeg({ quality: quality || config.quality || 80 });
+            break;
+          case 'png':
+            sharpInstance = sharpInstance.png({ quality: quality || config.quality || 80 });
+            break;
+          case 'webp':
+            sharpInstance = sharpInstance.webp({ quality: quality || config.quality || 80 });
+            break;
+          case 'avif':
+            sharpInstance = sharpInstance.avif({ quality: quality || config.quality || 80 });
+            break;
+          default:
+            sharpInstance = sharpInstance.jpeg({ quality: quality || config.quality || 80 });
+        }
       }
       
       await sharpInstance.toFile(targetPath);
@@ -257,31 +477,115 @@ ipcMain.handle('setAlwaysOnTop', async (event, value) => {
   return { success: true };
 });
 
+ipcMain.handle('setCompressOnCopy', async (event, value) => {
+  store.set('compressOnCopy', value);
+  return { success: true };
+});
+
 ipcMain.handle('executeNow', async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile', 'multiSelections'],
-    filters: [
-      { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }
-    ]
-  });
+  // 尝试获取选中的文件
+  const selectedFiles = getSelectedFiles();
   
-  if (!result.canceled && result.filePaths.length > 0) {
-    return processImage(result.filePaths);
+  if (selectedFiles && selectedFiles.length > 0) {
+    console.log('获取到选中的文件:', selectedFiles);
+    // 处理选中的文件
+    return processImage(selectedFiles);
+  } else {
+    console.log('未能获取选中的文件，使用文件选择对话框');
+    // 如果没有选中的文件，使用文件选择对话框
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }
+      ]
+    });
+    
+    if (!result.canceled && result.filePaths.length > 0) {
+      return processImage(result.filePaths);
+    }
   }
   
   return { canceled: true };
 });
 
 ipcMain.handle('compressSelected', async (event, quality) => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile', 'multiSelections'],
-    filters: [
-      { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }
-    ]
-  });
+  // 尝试获取选中的文件
+  const selectedFiles = getSelectedFiles();
   
-  if (!result.canceled && result.filePaths.length > 0) {
-    return processImage(result.filePaths, quality);
+  if (selectedFiles && selectedFiles.length > 0) {
+    // 原地压缩选中的图片
+    const results = [];
+    let compressedCount = 0;
+    let failedCount = 0;
+    
+    for (const filePath of selectedFiles) {
+      const result = await compressImageInPlace(filePath, quality);
+      results.push(result);
+      
+      if (result.success) {
+        compressedCount++;
+        mainWindow.webContents.send('success', {
+          message: `压缩成功: ${path.basename(filePath)}，减小了 ${result.compressionRatio}%`,
+          path: filePath
+        });
+      } else {
+        failedCount++;
+        mainWindow.webContents.send('error', {
+          message: `压缩失败: ${path.basename(filePath)}`,
+          error: result.error
+        });
+      }
+    }
+    
+    return { 
+      success: true, 
+      quality: quality || store.get('quality') || 80,
+      results,
+      compressedCount,
+      failedCount
+    };
+  } else {
+    console.log('未能获取选中的文件，使用文件选择对话框');
+    // 如果没有选中的文件，使用文件选择对话框
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }
+      ]
+    });
+    
+    if (!result.canceled && result.filePaths.length > 0) {
+      const results = [];
+      let compressedCount = 0;
+      let failedCount = 0;
+      
+      for (const filePath of result.filePaths) {
+        const compressResult = await compressImageInPlace(filePath, quality);
+        results.push(compressResult);
+        
+        if (compressResult.success) {
+          compressedCount++;
+          mainWindow.webContents.send('success', {
+            message: `压缩成功: ${path.basename(filePath)}，减小了 ${compressResult.compressionRatio}%`,
+            path: filePath
+          });
+        } else {
+          failedCount++;
+          mainWindow.webContents.send('error', {
+            message: `压缩失败: ${path.basename(filePath)}`,
+            error: compressResult.error
+          });
+        }
+      }
+      
+      return { 
+        success: true, 
+        quality: quality || store.get('quality') || 80,
+        results,
+        compressedCount,
+        failedCount
+      };
+    }
   }
   
   return { canceled: true };

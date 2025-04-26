@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getConfig: () => ipcRenderer.invoke('getConfig'),
   updateConfig: (config) => ipcRenderer.invoke('updateConfig', config),
   setAlwaysOnTop: (value) => ipcRenderer.invoke('setAlwaysOnTop', value),
+  setCompressOnCopy: (value) => ipcRenderer.invoke('setCompressOnCopy', value),
   
   // 执行操作
   executeNow: () => ipcRenderer.invoke('executeNow'),

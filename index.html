@@ -301,6 +301,9 @@
         <div class="checkbox-group">
             <input type="checkbox" id="alwaysOnTop" onchange="toggleAlwaysOnTop(this.checked)">
             <label for="alwaysOnTop">窗口置顶</label>
+            
+            <input type="checkbox" id="compressOnCopy" onchange="toggleCompressOnCopy(this.checked)" style="margin-left: 20px;">
+            <label for="compressOnCopy">复制时压缩</label>
         </div>
         <div class="button-group" id="buttonGroup">
             <button class="execute" id="executeNow">复制到目标目录</button>
@@ -392,6 +395,15 @@
             await window.electronAPI.updateConfig(config);
         }
 
+        // 添加复制时压缩控制函数
+        async function toggleCompressOnCopy(checked) {
+            await window.electronAPI.setCompressOnCopy(checked);
+            // 保存到配置
+            const config = await window.electronAPI.getConfig();
+            config.compressOnCopy = checked;
+            await window.electronAPI.updateConfig(config);
+        }
+
         // 修改加载配置函数
         async function loadConfig() {
             try {
@@ -423,6 +435,9 @@
                 
                 // 加载置顶状态
                 document.getElementById('alwaysOnTop').checked = (config && config.alwaysOnTop) || false;
+                
+                // 加载复制时压缩状态
+                document.getElementById('compressOnCopy').checked = (config && config.compressOnCopy) || false;
 
                 // 加载模式设置
                 if (config && config.simpleMode) {
@@ -492,6 +507,7 @@
                         document.getElementById('imageCompression').value = result.config.imageCompression;
                         document.getElementById('pathAliases').value = JSON.stringify(result.config.pathAliases);
                         document.getElementById('alwaysOnTop').checked = result.config.alwaysOnTop || false;
+                        document.getElementById('compressOnCopy').checked = result.config.compressOnCopy || false;
                         
                         // 更新执行按钮文案
                         updateExecuteButtonText(result.config);
@@ -568,6 +584,7 @@
                 imageCompression: parseInt(document.getElementById('imageCompression').value),
                 pathAliases: JSON.parse(document.getElementById('pathAliases').value),
                 alwaysOnTop: document.getElementById('alwaysOnTop').checked,
+                compressOnCopy: document.getElementById('compressOnCopy').checked,
                 simpleMode: isSimpleMode
             };
             
@@ -633,6 +650,7 @@
                 imageCompression: parseInt(document.getElementById('imageCompression').value),
                 pathAliases: JSON.parse(document.getElementById('pathAliases').value),
                 alwaysOnTop: document.getElementById('alwaysOnTop').checked,
+                compressOnCopy: document.getElementById('compressOnCopy').checked,
                 simpleMode: isSimpleMode
             };
 
