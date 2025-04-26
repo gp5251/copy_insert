@@ -1,5 +1,5 @@
 /**
- * 简单的日志系统
+ * Simple logging system
  */
 const isDevelopment = process.env.NODE_ENV === 'development';
 

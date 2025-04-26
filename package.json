@@ -8,7 +8,9 @@
     "test": "npx jest --config=jest.config.js",
     "pack": "electron-builder --dir",
     "build": "electron-builder --mac",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "rebuild": "electron-rebuild -f -w sharp",
+    "postinstall": "electron-builder install-app-deps"
   },
   "build": {
     "appId": "com.electron.copyinsert",
@@ -17,6 +19,9 @@
     "asarUnpack": [
       "node_modules/sharp/**/*"
     ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
     "files": [
       "**/*",
       "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
@@ -96,6 +101,7 @@
   "devDependencies": {
     "electron": "^34.0.2",
     "electron-builder": "^24.9.1",
+    "electron-rebuild": "^3.2.9",
     "jest": "^29.7.0"
   },
   "pnpm": {

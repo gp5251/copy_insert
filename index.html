@@ -36,6 +36,16 @@
             overflow: hidden;
         }
 
+        /* 应用标题区域样式 */
+        .app-title {
+            text-align: center;
+            margin-bottom: 15px;
+            -webkit-app-region: drag;
+            padding: 4px 0;
+            font-weight: bold;
+            display: none; /* 默认隐藏标题 */
+        }
+
         .button-group.simple-mode {
             display: block;
         }
@@ -262,7 +272,10 @@
 </head>
 <body>
     <div class="container">
-        <!-- 配置项选择 -->
+        <!-- 应用标题 -->
+        <div class="app-title">CopyInsert 配置</div>
+        
+        <!-- Profile Selection -->
         <div class="profile-group">
             <select id="profileSelect"></select>
             <div class="profile-actions">
@@ -272,12 +285,12 @@
         </div>
         
         <div class="form-group">
-            <label>目标目录</label>
-            <input type="text" id="targetDir" placeholder="请输入目标目录路径">
+            <!-- <label>目标目录</label> -->
+            <input type="text" id="targetDir" placeholder="输入目标目录路径">
         </div>
         <div class="lineItems">
             <div class="form-group">
-                <label>图片压缩质量 (1-100)</label>
+                <label>图像压缩质量 (1-100)</label>
                 <input type="number" id="imageCompression" min="1" max="100" value="80">
             </div>
             <div class="form-group">
@@ -291,7 +304,7 @@
         </div>
         <div class="button-group" id="buttonGroup">
             <button class="execute" id="executeNow">复制到目标目录</button>
-            <button id="btnCompress" title="使用当前设置的压缩质量压缩选中的图片">压缩图片</button>
+            <button id="btnCompress" title="使用当前质量设置压缩选定的图像">压缩图像</button>
             <button id="btnOpen">
                 <span>打开目录</span>
             </button>
@@ -301,13 +314,13 @@
         </div>
     </div>
 
-    <!-- 保存配置项对话框 -->
+    <!-- Save Profile Dialog -->
     <div id="profileSaveDialog" class="profile-save-dialog">
         <div class="profile-save-content">
             <h3>保存为新配置</h3>
             <div class="form-group">
                 <label>配置名称</label>
-                <input type="text" id="profileName" placeholder="请输入配置名称">
+                <input type="text" id="profileName" placeholder="输入配置名称">
             </div>
             <div class="profile-save-actions">
                 <button onclick="closeProfileSaveDialog()">取消</button>
@@ -316,7 +329,7 @@
         </div>
     </div>
 
-    <div class="mode-toggle" onclick="toggleMode()" title="切换精简模式">⚙️</div>
+    <div class="mode-toggle" onclick="toggleMode()" title="切换简单模式">⚙️</div>
     <div class="mode-toggle mode-toggle2" onclick="window.electronAPI.closeWindow()" title="退出应用">✕</div>
 
     <div id="notification" class="notification"></div>
@@ -381,109 +394,142 @@
 
         // 修改加载配置函数
         async function loadConfig() {
-            const config = await window.electronAPI.getConfig();
-            document.getElementById('targetDir').value = config.targetDir;
-            document.getElementById('imageCompression').value = config.imageCompression;
-            document.getElementById('pathAliases').value = JSON.stringify(config.pathAliases);
-            
-            // 更新执行按钮文案
-            updateExecuteButtonText(config);
-            
-            // 加载置顶状态
-            document.getElementById('alwaysOnTop').checked = config.alwaysOnTop || false;
-
-            // 加载模式设置
-            if (config.simpleMode) {
-                isSimpleMode = true;
-                const container = document.querySelector('.container');
-                const buttonGroup = document.querySelector('.button-group');
-                const formGroups = document.querySelectorAll('.form-group');
-                const checkboxGroups = document.querySelectorAll('.checkbox-group');
-                const profileGroup = document.querySelector('.profile-group');
-                const saveButton = document.querySelector('button:not(.execute)');
+            try {
+                const config = await window.electronAPI.getConfig();
                 
-                container.classList.add('simple-mode');
-                buttonGroup.classList.add('simple-mode');
-                formGroups.forEach(group => group.classList.add('hidden'));
-                checkboxGroups.forEach(group => group.classList.add('hidden'));
-                profileGroup.classList.add('hidden');
-                saveButton.style.display = 'none';
-                document.body.style.backgroundColor = 'transparent';
-            } else {
-                document.body.style.backgroundColor = '#f5f5f5';
-            }
+                // 检查配置是否存在且完整
+                if (!config || !config.targetDir || !config.pathAliases) {
+                    showNotification('正在初始化应用配置...', 'info');
+                    // 重新获取配置，因为后端会自动创建默认配置
+                    const updatedConfig = await window.electronAPI.getConfig();
+                    if (!updatedConfig) {
+                        showNotification('配置初始化失败，请重启应用', 'error');
+                        return;
+                    }
+                    
+                    document.getElementById('targetDir').value = updatedConfig.targetDir;
+                    document.getElementById('imageCompression').value = updatedConfig.imageCompression;
+                    document.getElementById('pathAliases').value = JSON.stringify(updatedConfig.pathAliases);
+                    
+                    showNotification('配置初始化完成', 'success');
+                } else {
+                    document.getElementById('targetDir').value = config.targetDir;
+                    document.getElementById('imageCompression').value = config.imageCompression;
+                    document.getElementById('pathAliases').value = JSON.stringify(config.pathAliases);
+                }
+                
+                // 更新执行按钮文案
+                updateExecuteButtonText(config || {});
+                
+                // 加载置顶状态
+                document.getElementById('alwaysOnTop').checked = (config && config.alwaysOnTop) || false;
 
-            // 加载配置项
-            await loadProfiles();
+                // 加载模式设置
+                if (config && config.simpleMode) {
+                    isSimpleMode = true;
+                    const container = document.querySelector('.container');
+                    const buttonGroup = document.querySelector('.button-group');
+                    const formGroups = document.querySelectorAll('.form-group');
+                    const checkboxGroups = document.querySelectorAll('.checkbox-group');
+                    const profileGroup = document.querySelector('.profile-group');
+                    const saveButton = document.querySelector('button:not(.execute)');
+                    
+                    container.classList.add('simple-mode');
+                    buttonGroup.classList.add('simple-mode');
+                    formGroups.forEach(group => group.classList.add('hidden'));
+                    checkboxGroups.forEach(group => group.classList.add('hidden'));
+                    profileGroup.classList.add('hidden');
+                    saveButton.style.display = 'none';
+                    document.body.style.backgroundColor = 'transparent';
+                } else {
+                    document.body.style.backgroundColor = '#f5f5f5';
+                }
+
+                // 加载配置项
+                await loadProfiles();
+            } catch (error) {
+                console.error('加载配置失败:', error);
+                showNotification('加载配置失败: ' + error.message, 'error');
+            }
         }
 
         // 加载配置项
         async function loadProfiles() {
-            const result = await window.electronAPI.getAllProfiles();
-            profiles = result.profiles;
-            activeProfile = result.activeProfile;
-            
-            // 更新下拉框
-            const profileSelect = document.getElementById('profileSelect');
-            profileSelect.innerHTML = '';
-            
-            Object.keys(profiles).forEach(profileName => {
-                const option = document.createElement('option');
-                option.value = profileName;
-                option.textContent = profileName;
-                if (profileName === activeProfile) {
-                    option.selected = true;
-                }
-                profileSelect.appendChild(option);
-            });
-            
-            // 更新保存按钮文本
-            updateSaveButtonText();
-            
-            // 添加事件监听
-            profileSelect.addEventListener('change', async () => {
-                const selectedProfile = profileSelect.value;
-                const result = await window.electronAPI.applyProfile(selectedProfile);
-                if (result.success) {
-                    activeProfile = selectedProfile;
-                    document.getElementById('targetDir').value = result.config.targetDir;
-                    document.getElementById('imageCompression').value = result.config.imageCompression;
-                    document.getElementById('pathAliases').value = JSON.stringify(result.config.pathAliases);
-                    document.getElementById('alwaysOnTop').checked = result.config.alwaysOnTop || false;
-                    
-                    // 更新执行按钮文案
-                    updateExecuteButtonText(result.config);
-                    
-                    // 更新保存按钮文本
-                    updateSaveButtonText();
-                    
-                    showNotification(`已应用配置: ${selectedProfile}`, 'success');
-                } else {
-                    showNotification(result.message, 'error');
-                }
-            });
-            
-            // 添加保存配置项按钮事件
-            document.getElementById('btnSaveProfile').addEventListener('click', showProfileSaveDialog);
-            
-            // 添加删除配置项按钮事件
-            document.getElementById('btnDeleteProfile').addEventListener('click', async () => {
-                const selectedProfile = profileSelect.value;
-                if (selectedProfile === 'default') {
-                    showNotification('不能删除默认配置', 'error');
+            try {
+                const result = await window.electronAPI.getAllProfiles();
+                if (!result || !result.profiles) {
+                    showNotification('配置项加载失败，使用默认配置', 'error');
                     return;
                 }
                 
-                if (confirm(`确定要删除配置 "${selectedProfile}" 吗？`)) {
-                    const result = await window.electronAPI.deleteProfile(selectedProfile);
+                profiles = result.profiles;
+                activeProfile = result.activeProfile || 'default';
+                
+                // 更新下拉框
+                const profileSelect = document.getElementById('profileSelect');
+                profileSelect.innerHTML = '';
+                
+                Object.keys(profiles).forEach(profileName => {
+                    const option = document.createElement('option');
+                    option.value = profileName;
+                    option.textContent = profileName;
+                    if (profileName === activeProfile) {
+                        option.selected = true;
+                    }
+                    profileSelect.appendChild(option);
+                });
+                
+                // 更新保存按钮文本
+                updateSaveButtonText();
+                
+                // 添加事件监听
+                profileSelect.addEventListener('change', async () => {
+                    const selectedProfile = profileSelect.value;
+                    const result = await window.electronAPI.applyProfile(selectedProfile);
                     if (result.success) {
-                        showNotification(`已删除配置: ${selectedProfile}`, 'success');
-                        await loadProfiles();
+                        activeProfile = selectedProfile;
+                        document.getElementById('targetDir').value = result.config.targetDir;
+                        document.getElementById('imageCompression').value = result.config.imageCompression;
+                        document.getElementById('pathAliases').value = JSON.stringify(result.config.pathAliases);
+                        document.getElementById('alwaysOnTop').checked = result.config.alwaysOnTop || false;
+                        
+                        // 更新执行按钮文案
+                        updateExecuteButtonText(result.config);
+                        
+                        // 更新保存按钮文本
+                        updateSaveButtonText();
+                        
+                        showNotification(`已应用配置: ${selectedProfile}`, 'success');
                     } else {
                         showNotification(result.message, 'error');
                     }
-                }
-            });
+                });
+                
+                // 添加保存配置项按钮事件
+                document.getElementById('btnSaveProfile').addEventListener('click', showProfileSaveDialog);
+                
+                // 添加删除配置项按钮事件
+                document.getElementById('btnDeleteProfile').addEventListener('click', async () => {
+                    const selectedProfile = profileSelect.value;
+                    if (selectedProfile === 'default') {
+                        showNotification('不能删除默认配置', 'error');
+                        return;
+                    }
+                    
+                    if (confirm(`确定要删除配置 "${selectedProfile}" 吗？`)) {
+                        const result = await window.electronAPI.deleteProfile(selectedProfile);
+                        if (result.success) {
+                            showNotification(`已删除配置: ${selectedProfile}`, 'success');
+                            await loadProfiles();
+                        } else {
+                            showNotification(result.message, 'error');
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('加载配置项失败:', error);
+                showNotification('加载配置项失败: ' + error.message, 'error');
+            }
         }
         
         // 更新保存按钮文本
@@ -543,16 +589,32 @@
         // 添加更新执行按钮文案的函数
         function updateExecuteButtonText(config) {
             const executeButton = document.querySelector('button.execute');
+            if (!config || !config.targetDir || !config.pathAliases) {
+                executeButton.textContent = '复制到...';
+                return;
+            }
+            
             const targetDir = config.targetDir;
             const aliases = config.pathAliases;
+            
+            // 检查别名是否有效
+            if (!aliases || Object.keys(aliases).length === 0) {
+                executeButton.textContent = `复制到 ${targetDir}`;
+                return;
+            }
             
             // 获取第一个别名配置
             const [alias, aliasValue] = Object.entries(aliases)[0];
             
             // 在目标路径中查找别名值
+            if (!aliasValue) {
+                executeButton.textContent = `复制到 ${targetDir}`;
+                return;
+            }
+            
             const parts = targetDir.split(aliasValue);
             if (parts.length < 2) {
-                executeButton.textContent = '复制到...';
+                executeButton.textContent = `复制到 ${targetDir}`;
                 return;
             }
             
@@ -607,12 +669,12 @@
             try {
                 const result = await window.electronAPI.openTargetDir();
                 if(result.success) {
-                    showNotification('已打开目标目录', 'success');
+                    showNotification('目标目录已打开', 'success');
                 } else {
-                    showNotification('打开目标目录失败：' + result.message, 'error');
+                    showNotification('打开目标目录失败: ' + result.message, 'error');
                 }
             } catch (error) {
-                showNotification('打开目标目录时发生错误：' + error, 'error');
+                showNotification('打开目标目录出错: ' + error, 'error');
             }
         }
 
