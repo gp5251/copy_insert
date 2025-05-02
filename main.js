@@ -329,6 +329,7 @@ async function processImage(filePaths, quality) {
   const config = store.get('config');
   const targetDir = config.targetDir;
   const pathAliases = config.pathAliases || {};
+  const shouldCompress = config.compressOnCopy || false;
   const compressionQuality = quality || config.imageCompression || 80;
 
   if (!fs.existsSync(targetDir)) {
@@ -364,64 +365,75 @@ async function processImage(filePaths, quality) {
       
       const targetPath = path.join(targetDir, targetFilename);
       
-      // 处理图片压缩
-      let sharpInstance = sharp(filePath);
-      const format = ext.replace('.', '');
-      
-      // 根据文件格式设置压缩参数
-      switch (format) {
-        case 'jpg':
-        case 'jpeg':
-          sharpInstance = sharpInstance.jpeg({ quality: compressionQuality });
-          break;
-        case 'png':
-          sharpInstance = sharpInstance.png({ quality: compressionQuality });
-          break;
-        case 'webp':
-          sharpInstance = sharpInstance.webp({ quality: compressionQuality });
-          break;
-        case 'avif':
-          sharpInstance = sharpInstance.avif({ quality: compressionQuality });
-          break;
-        default:
-          // 对于其他格式（如 gif），直接复制
-          fs.copyFileSync(filePath, targetPath);
-          break;
-      }
-
-      // 如果是可压缩的格式，执行压缩
-      if (format !== 'gif') {
+      // 根据配置决定是否压缩
+      if (shouldCompress && ext !== '.gif') {
+        // 处理图片压缩
+        let sharpInstance = sharp(filePath);
+        const format = ext.replace('.', '');
+        
+        // 根据文件格式设置压缩参数
+        switch (format) {
+          case 'jpg':
+          case 'jpeg':
+            sharpInstance = sharpInstance.jpeg({ quality: compressionQuality });
+            break;
+          case 'png':
+            sharpInstance = sharpInstance.png({ quality: compressionQuality });
+            break;
+          case 'webp':
+            sharpInstance = sharpInstance.webp({ quality: compressionQuality });
+            break;
+          case 'avif':
+            sharpInstance = sharpInstance.avif({ quality: compressionQuality });
+            break;
+        }
+        
         await sharpInstance.toFile(targetPath);
+        
+        // 获取压缩前后的文件大小
+        const originalSize = fs.statSync(filePath).size;
+        const compressedSize = fs.statSync(targetPath).size;
+        const compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toFixed(2);
+        
+        results.push({
+          originalPath: filePath,
+          targetPath: targetPath,
+          clipboardPath: targetPath,
+          compressionRatio: compressionRatio,
+          success: true
+        });
+        
+        mainWindow.webContents.send('success', `已压缩并复制文件: ${targetFilename}，压缩率: ${compressionRatio}%`);
+      } else {
+        // 直接复制文件
+        fs.copyFileSync(filePath, targetPath);
+        
+        results.push({
+          originalPath: filePath,
+          targetPath: targetPath,
+          clipboardPath: targetPath,
+          success: true
+        });
+        
+        mainWindow.webContents.send('success', `已复制文件: ${targetFilename}`);
       }
 
-      // 生成用于剪贴板的路径（使用别名替换）
-      let clipboardPath = targetPath;
-      for (const [alias, value] of Object.entries(pathAliases)) {
-        if (targetPath.includes(value)) {
-          clipboardPath = targetPath.replace(value, alias);
-          // 只保留别名开始的部分
-          const aliasIndex = clipboardPath.indexOf(alias);
-          if (aliasIndex !== -1) {
-            clipboardPath = clipboardPath.substring(aliasIndex);
+      // 处理路径别名替换
+      if (results[results.length - 1].success) {
+        let clipboardPath = results[results.length - 1].clipboardPath;
+        for (const [alias, value] of Object.entries(pathAliases)) {
+          if (clipboardPath.includes(value)) {
+            clipboardPath = clipboardPath.replace(value, alias);
+            // 只保留别名开始的部分
+            const aliasIndex = clipboardPath.indexOf(alias);
+            if (aliasIndex !== -1) {
+              clipboardPath = clipboardPath.substring(aliasIndex);
+            }
+            results[results.length - 1].clipboardPath = clipboardPath;
+            break;
           }
-          break;
         }
       }
-
-      // 获取压缩前后的文件大小
-      const originalSize = fs.statSync(filePath).size;
-      const compressedSize = fs.statSync(targetPath).size;
-      const compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toFixed(2);
-      
-      results.push({
-        originalPath: filePath,
-        targetPath: targetPath,
-        clipboardPath: clipboardPath,
-        compressionRatio: compressionRatio,
-        success: true
-      });
-      
-      mainWindow.webContents.send('success', `已压缩并复制文件: ${targetFilename}，压缩率: ${compressionRatio}%`);
     } catch (error) {
       console.error('处理图片失败:', error);
       
