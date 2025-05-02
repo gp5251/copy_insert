@@ -328,7 +328,8 @@ async function processImage(filePaths, quality) {
   const results = [];
   const config = store.get('config');
   const targetDir = config.targetDir;
-  const shouldCompress = config.compressOnCopy || false;
+  const pathAliases = config.pathAliases || {};
+  const compressionQuality = quality || config.imageCompression || 80;
 
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true });
@@ -336,55 +337,91 @@ async function processImage(filePaths, quality) {
 
   for (const filePath of filePaths) {
     try {
-      const originalName = path.basename(filePath, path.extname(filePath));
-      const targetFormat = config.format || 'jpeg';
+      const originalName = path.basename(filePath);
+      const ext = path.extname(originalName).toLowerCase();
       
-      let targetFilename;
-      if (config.keepOriginalName) {
-        targetFilename = `${originalName}.${targetFormat}`;
-        let counter = 1;
-        while (fs.existsSync(path.join(targetDir, targetFilename))) {
-          targetFilename = `${originalName}_${counter}.${targetFormat}`;
-          counter++;
-        }
-      } else {
-        targetFilename = generateUniqueFilename(originalName, targetFormat);
+      // 检查是否为支持的图片格式
+      const supportedFormats = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'];
+      if (!supportedFormats.includes(ext)) {
+        results.push({
+          originalPath: filePath,
+          error: '不支持的文件格式',
+          success: false
+        });
+        mainWindow.webContents.send('error', `不支持的文件格式: ${originalName}`);
+        continue;
+      }
+
+      let targetFilename = originalName;
+      let counter = 1;
+      
+      // 如果目标文件已存在，则添加序号
+      while (fs.existsSync(path.join(targetDir, targetFilename))) {
+        const nameWithoutExt = path.basename(originalName, ext);
+        targetFilename = `${nameWithoutExt}_${counter}${ext}`;
+        counter++;
       }
       
       const targetPath = path.join(targetDir, targetFilename);
       
+      // 处理图片压缩
       let sharpInstance = sharp(filePath);
+      const format = ext.replace('.', '');
       
-      // Set output options based on target format
-      if (shouldCompress) {
-        switch (targetFormat.toLowerCase()) {
-          case 'jpeg':
-          case 'jpg':
-            sharpInstance = sharpInstance.jpeg({ quality: quality || config.quality || 80 });
-            break;
-          case 'png':
-            sharpInstance = sharpInstance.png({ quality: quality || config.quality || 80 });
-            break;
-          case 'webp':
-            sharpInstance = sharpInstance.webp({ quality: quality || config.quality || 80 });
-            break;
-          case 'avif':
-            sharpInstance = sharpInstance.avif({ quality: quality || config.quality || 80 });
-            break;
-          default:
-            sharpInstance = sharpInstance.jpeg({ quality: quality || config.quality || 80 });
+      // 根据文件格式设置压缩参数
+      switch (format) {
+        case 'jpg':
+        case 'jpeg':
+          sharpInstance = sharpInstance.jpeg({ quality: compressionQuality });
+          break;
+        case 'png':
+          sharpInstance = sharpInstance.png({ quality: compressionQuality });
+          break;
+        case 'webp':
+          sharpInstance = sharpInstance.webp({ quality: compressionQuality });
+          break;
+        case 'avif':
+          sharpInstance = sharpInstance.avif({ quality: compressionQuality });
+          break;
+        default:
+          // 对于其他格式（如 gif），直接复制
+          fs.copyFileSync(filePath, targetPath);
+          break;
+      }
+
+      // 如果是可压缩的格式，执行压缩
+      if (format !== 'gif') {
+        await sharpInstance.toFile(targetPath);
+      }
+
+      // 生成用于剪贴板的路径（使用别名替换）
+      let clipboardPath = targetPath;
+      for (const [alias, value] of Object.entries(pathAliases)) {
+        if (targetPath.includes(value)) {
+          clipboardPath = targetPath.replace(value, alias);
+          // 只保留别名开始的部分
+          const aliasIndex = clipboardPath.indexOf(alias);
+          if (aliasIndex !== -1) {
+            clipboardPath = clipboardPath.substring(aliasIndex);
+          }
+          break;
         }
       }
-      
-      await sharpInstance.toFile(targetPath);
+
+      // 获取压缩前后的文件大小
+      const originalSize = fs.statSync(filePath).size;
+      const compressedSize = fs.statSync(targetPath).size;
+      const compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toFixed(2);
       
       results.push({
         originalPath: filePath,
         targetPath: targetPath,
+        clipboardPath: clipboardPath,
+        compressionRatio: compressionRatio,
         success: true
       });
       
-      mainWindow.webContents.send('success', `已复制文件: ${targetFilename}`);
+      mainWindow.webContents.send('success', `已压缩并复制文件: ${targetFilename}，压缩率: ${compressionRatio}%`);
     } catch (error) {
       console.error('处理图片失败:', error);
       
@@ -396,6 +433,15 @@ async function processImage(filePaths, quality) {
       
       mainWindow.webContents.send('error', `处理文件失败: ${path.basename(filePath)}`);
     }
+  }
+
+  // 如果有成功复制的文件，将路径写入剪贴板
+  if (results.length > 0 && results.some(r => r.success)) {
+    const clipboardText = results
+      .filter(r => r.success)
+      .map(r => r.clipboardPath)
+      .join('\n');
+    clipboard.writeText(clipboardText);
   }
   
   return results;
@@ -497,9 +543,10 @@ ipcMain.handle('executeNow', async () => {
     console.log('获取到选中的文件:', selectedFiles);
     // 处理选中的文件
     const results = await processImage(selectedFiles);
+    const successCount = results.filter(r => r.success).length;
     return { 
       success: true, 
-      message: `已处理 ${results.length} 个文件`
+      message: `已处理 ${successCount} 个文件，路径已复制到剪贴板`
     };
   } else {
     console.log('未能获取选中的文件，使用文件选择对话框');
@@ -513,9 +560,10 @@ ipcMain.handle('executeNow', async () => {
     
     if (!result.canceled && result.filePaths.length > 0) {
       const results = await processImage(result.filePaths);
+      const successCount = results.filter(r => r.success).length;
       return { 
         success: true, 
-        message: `已处理 ${results.length} 个文件`
+        message: `已处理 ${successCount} 个文件，路径已复制到剪贴板`
       };
     }
   }
