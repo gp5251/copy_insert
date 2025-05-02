@@ -551,36 +551,21 @@ ipcMain.handle('executeNow', async () => {
   // 尝试获取选中的文件
   const selectedFiles = getSelectedFiles();
   
-  if (selectedFiles && selectedFiles.length > 0) {
-    console.log('获取到选中的文件:', selectedFiles);
-    // 处理选中的文件
-    const results = await processImage(selectedFiles);
-    const successCount = results.filter(r => r.success).length;
+  if (!selectedFiles || selectedFiles.length === 0) {
     return { 
-      success: true, 
-      message: `已处理 ${successCount} 个文件，路径已复制到剪贴板`
+      success: false, 
+      message: '请先选择要处理的图片文件'
     };
-  } else {
-    console.log('未能获取选中的文件，使用文件选择对话框');
-    // 如果没有选中的文件，使用文件选择对话框
-    const result = await dialog.showOpenDialog({
-      properties: ['openFile', 'multiSelections'],
-      filters: [
-        { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }
-      ]
-    });
-    
-    if (!result.canceled && result.filePaths.length > 0) {
-      const results = await processImage(result.filePaths);
-      const successCount = results.filter(r => r.success).length;
-      return { 
-        success: true, 
-        message: `已处理 ${successCount} 个文件，路径已复制到剪贴板`
-      };
-    }
   }
-  
-  return { canceled: true };
+
+  console.log('获取到选中的文件:', selectedFiles);
+  // 处理选中的文件
+  const results = await processImage(selectedFiles);
+  const successCount = results.filter(r => r.success).length;
+  return { 
+    success: true, 
+    message: `已处理 ${successCount} 个文件，路径已复制到剪贴板`
+  };
 });
 
 ipcMain.handle('compressSelected', async (event, quality) => {
