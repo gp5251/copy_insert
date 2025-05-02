@@ -96,6 +96,7 @@
         .button-group.simple-mode .execute {
             border-radius: 4px;
             padding: 6px 12px;
+            margin-bottom: 2px;
         }
         .button-group.simple-mode #btnSave,
         .button-group.simple-mode #btnOpen {
@@ -105,16 +106,16 @@
         .button-group.simple-mode #btnCompress {
             padding: 6px 8px;
             font-size: 12px;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
         .button-group.simple-mode #btnSave {
             display: none;
         }
         /* 精简模式下隐藏文本，只显示图标 */
-        .button-group.simple-mode #btnSave span,
+        /* .button-group.simple-mode #btnSave span,
         .button-group.simple-mode #btnOpen span {
             display: none;
-        }
+        } */
         button {
             padding: 8px 16px;
             border: none;
@@ -307,13 +308,9 @@
         </div>
         <div class="button-group" id="buttonGroup">
             <button class="execute" id="executeNow">复制到目标目录</button>
-            <button id="btnCompress" title="使用当前质量设置压缩选定的图像">压缩图像</button>
-            <button id="btnOpen">
-                <span>打开目录</span>
-            </button>
-            <button id="btnSave">
-                <span>保存配置</span>
-            </button>
+            <button id="btnCompress">压缩图像</button>
+            <button id="btnOpen"> 📂 <span>打开目录</span> </button>
+            <button id="btnSave"> 💾 <span>保存配置</span> </button>
         </div>
     </div>
 
@@ -368,7 +365,7 @@
                 profileGroup.classList.add('hidden');
                 saveButton.style.display = 'none';
                 document.body.style.backgroundColor = 'transparent';
-                await window.electronAPI.setWindowSize(190, 90, false);
+                await window.electronAPI.setWindowSize(190, 120, false);
             } else {
                 container.classList.remove('simple-mode');
                 buttonGroup.classList.remove('simple-mode');
@@ -674,7 +671,7 @@
             try {
                 const result = await window.electronAPI.executeNow();
                 if (result.success) {
-                    showNotification('执行成功', 'success');
+                    showNotification('执行成功 ' + result.message, 'success');
                 }
             } catch (error) {
                 console.error('执行失败:', error);
@@ -772,9 +769,9 @@
                 showNotification(`正在处理选中的图片，压缩质量: ${quality}...`, 'info');
                 const result = await window.electronAPI.compressSelected(quality);
                 if (result.success) {
-                    showNotification(`压缩完成: ${result.compressedCount} 个图片已处理，使用压缩质量: ${result.quality}${result.skippedCount > 0 ? `，跳过 ${result.skippedCount} 个非图片文件` : ''}`, 'success');
+                    showNotification(result.message, 'success');
                 } else {
-                    showNotification(result.message, 'error');
+                    showNotification(result.message || '压缩失败', 'error');
                 }
             } catch (error) {
                 console.error('压缩图片失败:', error);

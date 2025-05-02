@@ -10,11 +10,11 @@ const SimpleStore = require('./simple-store.js');
 //   console.error('Failed to load sharp module:', error);
 // }
 
-// Using SimpleStore instead of electron-store
+// 使用 SimpleStore 替代 electron-store
 const store = new SimpleStore({ name: 'config' });
 const profileStore = new SimpleStore({ name: 'profiles' });
 
-// Create default profile if it doesn't exist
+// 创建默认配置文件（如果不存在）
 if (!profileStore.has('profiles')) {
   const defaultProfile = {
     targetDir: '',
@@ -36,12 +36,12 @@ if (!profileStore.has('profiles')) {
     activeProfile: 'default'
   });
   
-  // Apply default profile to current config
-  store.set(defaultProfile);
+  // 将默认配置应用到当前配置
+  store.set('config', defaultProfile);
 }
 
-// Ensure configuration exists
-if (!store.has('targetDir')) {
+// 确保配置存在
+if (!store.has('config')) {
   const defaultConfig = {
     targetDir: path.join(app.getPath('pictures'), 'CopyInsert'),
     format: 'jpeg',
@@ -56,13 +56,17 @@ if (!store.has('targetDir')) {
     pathAliases: {"@": "src"},
     compressOnCopy: false
   };
-  store.set(defaultConfig);
+  store.set('config', defaultConfig);
 }
 
-// Ensure target directory exists
-const targetDir = store.get('targetDir');
-if (targetDir && !fs.existsSync(targetDir)) {
-  fs.mkdirSync(targetDir, { recursive: true });
+// 确保目标目录存在
+const config = store.get('config');
+if (config && config.targetDir && !fs.existsSync(config.targetDir)) {
+  try {
+    fs.mkdirSync(config.targetDir, { recursive: true });
+  } catch (error) {
+    console.error('创建目标目录失败:', error);
+  }
 }
 
 // Generate unique filename
@@ -322,7 +326,7 @@ async function createWindow() {
 // Image processing function
 async function processImage(filePaths, quality) {
   const results = [];
-  const config = store.get();
+  const config = store.get('config');
   const targetDir = config.targetDir;
   const shouldCompress = config.compressOnCopy || false;
 
@@ -380,12 +384,9 @@ async function processImage(filePaths, quality) {
         success: true
       });
       
-      mainWindow.webContents.send('success', {
-        message: `Processing successful: ${targetFilename}`,
-        path: targetPath
-      });
+      mainWindow.webContents.send('success', `已复制文件: ${targetFilename}`);
     } catch (error) {
-      console.error('Error processing image:', error);
+      console.error('处理图片失败:', error);
       
       results.push({
         originalPath: filePath,
@@ -393,10 +394,7 @@ async function processImage(filePaths, quality) {
         success: false
       });
       
-      mainWindow.webContents.send('error', {
-        message: `Processing failed: ${path.basename(filePath)}`,
-        error: error.message
-      });
+      mainWindow.webContents.send('error', `处理文件失败: ${path.basename(filePath)}`);
     }
   }
   
@@ -498,7 +496,11 @@ ipcMain.handle('executeNow', async () => {
   if (selectedFiles && selectedFiles.length > 0) {
     console.log('获取到选中的文件:', selectedFiles);
     // 处理选中的文件
-    return processImage(selectedFiles);
+    const results = await processImage(selectedFiles);
+    return { 
+      success: true, 
+      message: `已处理 ${results.length} 个文件`
+    };
   } else {
     console.log('未能获取选中的文件，使用文件选择对话框');
     // 如果没有选中的文件，使用文件选择对话框
@@ -510,7 +512,11 @@ ipcMain.handle('executeNow', async () => {
     });
     
     if (!result.canceled && result.filePaths.length > 0) {
-      return processImage(result.filePaths);
+      const results = await processImage(result.filePaths);
+      return { 
+        success: true, 
+        message: `已处理 ${results.length} 个文件`
+      };
     }
   }
   
@@ -533,25 +539,20 @@ ipcMain.handle('compressSelected', async (event, quality) => {
       
       if (result.success) {
         compressedCount++;
-        mainWindow.webContents.send('success', {
-          message: `压缩成功: ${path.basename(filePath)}，减小了 ${result.compressionRatio}%`,
-          path: filePath
-        });
+        mainWindow.webContents.send('success', `压缩完成: ${path.basename(filePath)}，减小了 ${result.compressionRatio}%，使用压缩质量: ${result.quality}`);
       } else {
         failedCount++;
-        mainWindow.webContents.send('error', {
-          message: `压缩失败: ${path.basename(filePath)}`,
-          error: result.error
-        });
+        mainWindow.webContents.send('error', `压缩失败: ${path.basename(filePath)}，错误: ${result.error}`);
       }
     }
     
     return { 
       success: true, 
-      quality: quality || store.get('quality') || 80,
+      quality: quality || store.get('config').quality || 80,
       results,
       compressedCount,
-      failedCount
+      failedCount,
+      message: `压缩成功: ${compressedCount} 个图片已处理，使用压缩质量: ${quality}，平均减小了 ${results.reduce((sum, r) => sum + parseFloat(r.compressionRatio || 0), 0) / compressedCount}%`
     };
   } else {
     console.log('未能获取选中的文件，使用文件选择对话框');
@@ -574,25 +575,20 @@ ipcMain.handle('compressSelected', async (event, quality) => {
         
         if (compressResult.success) {
           compressedCount++;
-          mainWindow.webContents.send('success', {
-            message: `压缩成功: ${path.basename(filePath)}，减小了 ${compressResult.compressionRatio}%`,
-            path: filePath
-          });
+          mainWindow.webContents.send('success', `压缩完成: ${path.basename(filePath)}，减小了 ${compressResult.compressionRatio}%，使用压缩质量: ${compressResult.quality}`);
         } else {
           failedCount++;
-          mainWindow.webContents.send('error', {
-            message: `压缩失败: ${path.basename(filePath)}`,
-            error: compressResult.error
-          });
+          mainWindow.webContents.send('error', `压缩失败: ${path.basename(filePath)}，错误: ${compressResult.error}`);
         }
       }
       
       return { 
         success: true, 
-        quality: quality || store.get('quality') || 80,
+        quality: quality || store.get('config').quality || 80,
         results,
         compressedCount,
-        failedCount
+        failedCount,
+        message: `压缩成功: ${compressedCount} 个图片已处理，使用压缩质量: ${quality}，平均减小了 ${results.reduce((sum, r) => sum + parseFloat(r.compressionRatio || 0), 0) / compressedCount}%`
       };
     }
   }
@@ -616,12 +612,12 @@ ipcMain.handle('setWindowSize', async (event, width, height, hasFrame) => {
 });
 
 ipcMain.handle('openTargetDir', async () => {
-  const targetDir = store.get('targetDir');
-  if (fs.existsSync(targetDir)) {
-    shell.openPath(targetDir);
+  const config = store.get('config');
+  if (config && config.targetDir && fs.existsSync(config.targetDir)) {
+    shell.openPath(config.targetDir);
     return { success: true };
   } else {
-    return { success: false, error: 'Target directory does not exist' };
+    return { success: false, error: '目标目录不存在' };
   }
 });
 
@@ -665,14 +661,14 @@ ipcMain.handle('applyProfile', async (event, profileName) => {
       });
       
       // Apply the profile config to the main config
-      store.set(profiles[profileName]);
+      store.set('config', profiles[profileName]);
       
       return { success: true, config: profiles[profileName] };
     } else {
-      return { success: false, error: 'Profile does not exist' };
+      return { success: false, error: '配置文件不存在' };
     }
   } catch (error) {
-    console.error('Failed to apply profile:', error);
+    console.error('应用配置文件失败:', error);
     return { success: false, error: error.message };
   }
 });
@@ -719,4 +715,17 @@ ipcMain.handle('closeWindow', () => {
 ipcMain.handle('exitApp', () => {
   app.quit();
   return { success: true };
+});
+
+// 添加模式切换处理
+ipcMain.on('toggle-compact-mode', (event, isCompact) => {
+  if (mainWindow) {
+    mainWindow.webContents.send('compact-mode-changed', isCompact);
+    store.set('compactMode', isCompact);
+  }
+});
+
+// 添加退出应用处理
+ipcMain.on('quit-app', () => {
+  app.quit();
 });
