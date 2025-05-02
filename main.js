@@ -215,7 +215,7 @@ function getSelectedFiles() {
   return null;
 }
 
-// 原地压缩图片函数
+// 压缩图片函数
 async function compressImageInPlace(filePath, quality) {
   try {
     const extname = path.extname(filePath).toLowerCase();
@@ -229,12 +229,18 @@ async function compressImageInPlace(filePath, quality) {
       };
     }
     
-    // 创建临时文件路径
-    const tempPath = `${filePath}.temp${extname}`;
+    // 生成复制文件的路径
+    const originalName = path.basename(filePath, extname);
+    const copyFilename = `${originalName}_compressed${extname}`;
+    const copyPath = path.join(path.dirname(filePath), copyFilename);
+    
+    // 复制原文件
+    fs.copyFileSync(filePath, copyPath);
+    
     const config = store.get();
     const compressQuality = quality || config.quality || 80;
     
-    let sharpInstance = sharp(filePath);
+    let sharpInstance = sharp(copyPath);
     
     // 根据文件格式设置压缩参数
     switch (extname) {
@@ -255,6 +261,9 @@ async function compressImageInPlace(filePath, quality) {
         sharpInstance = sharpInstance.jpeg({ quality: compressQuality });
     }
     
+    // 创建临时文件路径
+    const tempPath = `${copyPath}.temp${extname}`;
+    
     // 保存到临时文件
     await sharpInstance.toFile(tempPath);
     
@@ -262,16 +271,16 @@ async function compressImageInPlace(filePath, quality) {
     const originalSize = fs.statSync(filePath).size;
     const compressedSize = fs.statSync(tempPath).size;
     
-    // 用压缩后的文件替换原始文件
-    fs.unlinkSync(filePath);
-    fs.renameSync(tempPath, filePath);
+    // 用压缩后的文件替换复制的文件
+    fs.unlinkSync(copyPath);
+    fs.renameSync(tempPath, copyPath);
     
     // 计算压缩比例
     const compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toFixed(2);
     
     return {
       success: true,
-      path: filePath,
+      path: copyPath,
       originalSize,
       compressedSize,
       compressionRatio,
